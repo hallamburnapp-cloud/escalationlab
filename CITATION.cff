@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use FLASHPOINT:2027 in teaching or academic work, please cite it as below."
+title: "FLASHPOINT:2027: A Crisis-Origins Exercise"
+abstract: "An interactive, branching crisis simulation for security and strategic studies seminars. Players take one of six seats (US President, NATO Secretary General, UK Prime Minister, Russian President, PRC Paramount Leader, UN Secretary-General) during a fictional July 2027 crisis spanning the Baltic, orbit and the Taiwan Strait."
+type: software
+authors:
+  - family-names: Burnapp
+    given-names: Hallam
+    email: h.burnapp.25@abdn.ac.uk
+url: "https://escalationlab.org/"
+repository-code: "https://github.com/hallamburnapp-cloud/flashpoint-2027"
+date-released: 2026-09-24
+license-url: "https://github.com/hallamburnapp-cloud/flashpoint-2027/blob/main/LICENSE.md"
+keywords:
+  - wargaming
+  - crisis simulation
+  - escalation
+  - strategic studies
+  - nuclear deterrence
+  - teaching
