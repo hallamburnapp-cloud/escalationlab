@@ -26,7 +26,7 @@ Requests and feedback: Hallam Burnapp, h.burnapp.25@abdn.ac.uk.
 
 ## Third-party material
 
-Typefaces (Archivo, IBM Plex Mono) are served by Google Fonts under the SIL Open Font License.
+Typefaces (Archivo, Newsreader, IBM Plex Mono) are served by Google Fonts under the SIL Open Font License.
 Works cited on the Sources & Method page remain the property of their respective authors and publishers.
 
 The software is provided "as is", without warranty of any kind. All scenario events are fictional.
