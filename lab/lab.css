@@ -1,5 +1,5 @@
 /* ============================================================
-   Belfer Lab — lab.css
+   TIN PROPHET (sealed research lab) — lab.css
    Tokens copied from site.css so the lab reads as one family with the hub.
    A quiet instrument: no overlay, no scanlines, no sound, no gauges.
    ============================================================ */
@@ -490,3 +490,30 @@ details > .details-body { padding: 4px 12px 12px; display: grid; gap: var(--spac
   .paper-line { border-bottom: 1px solid #999; }
   .paper-box { border-color: #111; }
 }
+
+/* ------------------------------------------------------------------------------------------
+   TIN PROPHET, the sealed-lab brand (Escalation Lab brand kit, HANDOFF.md task 6).
+   The header carries the sealed lockup and a link back to Escalation Lab on every lab screen;
+   the entry and lobby screens (body.sealed) take the sealed look: black #0C0E0F, bone #D9D4C7,
+   red #EB5B55 only for live or alert states. The simulation's own screens are unchanged. */
+.topbar { background: #0C0E0F; }
+.topbar-lockup { display: block; height: 1.6rem; width: auto; }
+.el-link { position: absolute; top: 0.85rem; right: var(--gutter); display: inline-flex; align-items: center; gap: 0.45rem; color: #D9D4C7; font-size: 0.8rem; text-decoration: none; }
+.el-link:hover span, .el-link:focus-visible span { text-decoration: underline; text-underline-offset: 0.2em; }
+.el-link .el-mark { width: 1.5rem; height: 1.5rem; flex: none; }
+@media (max-width: 40rem) { .el-link span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
+body.sealed {
+  --bg: #0C0E0F; --bg-deep: #0C0E0F; --panel: #0C0E0F; --panel-2: #121516; --panel-raised: #16191A;
+  --line: #2A2D2E; --line-strong: #3A3E40; --land: #121516;
+  --text: #D9D4C7; --heading: #D9D4C7; --text-muted: #A3A5A3; --text-faint: #8E9294;
+  --amber: #D9D4C7; --amber-hi: #FFFFFF; --amber-dim: #6E6B63;
+  --red: #EB5B55;
+  background: #0C0E0F; color: #D9D4C7;
+}
+body.sealed .card { background: transparent; border-color: #2A2D2E; }
+body.sealed .kicker { color: #8E9294; }
+body.sealed .btn-primary { background: #D9D4C7; color: #0C0E0F; }
+body.sealed .btn-primary:hover:not(:disabled) { background: #FFFFFF; }
+body.sealed input.code { border-color: #4A4E50; background: transparent; color: #D9D4C7; }
+body.sealed .notice.is-error { color: #F07A72; border-color: #EB5B55; }
+

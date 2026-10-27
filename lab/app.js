@@ -1,4 +1,4 @@
-// Belfer Lab — app.js
+// TIN PROPHET (sealed research lab) — app.js
 // The lab client: hash router, API client, and the screens for the gate, the group
 // terminal, the participant (phone) flow, the facilitator console and the observer view.
 //
@@ -241,6 +241,8 @@
     main.setAttribute("aria-busy", "true");
     UI.clear(main);
     main.className = "app";
+    // The entry and lobby screens wear the sealed-lab look; the simulation keeps its own interface.
+    document.body.classList.toggle("sealed", /^(gate:|group:waiting:|closed|p:table|p:wait:)/.test(key));
     timer.clearListeners();
     var ctx = build(main) || {};
     ctx._built = true;
@@ -601,7 +603,7 @@
       var seconds = Number(err.retryAfter) || 60;
       return "Too many attempts; wait " + seconds + " seconds.";
     }
-    if (err.status === 401) return "That code was not recognised.";
+    if (err.status === 401) return "That code isn't recognised. Check it with your facilitator.";
     if (err.status === 403) return "The lab server is not configured to accept this page's address (" + location.origin + "). Tell the facilitator.";
     if (!err.status) return "Could not reach the lab server. Check the connection and try again.";
     if (err.status === 404 || err.status === 405 || err.status >= 500 || /^http_\d+$/.test(String(err.code))) {
@@ -619,7 +621,7 @@
       var input = el("input", { type: "text", id: "gateCode", class: "code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false", maxlength: "40", inputmode: "text", required: true });
       var button = el("button", { type: "submit", class: "btn btn-primary" }, "Enter");
       var form = el("form", { class: "card gate", autocomplete: "off" }, [
-        el("p", { class: "kicker" }, "Belfer Lab"),
+        el("p", { class: "kicker" }, "TIN PROPHET"),
         el("h1", null, opts.participant ? "Join on your phone" : "Enter your access code"),
         el("p", { class: "lede" }, opts.participant
           ? "Enter the code shown on your table's terminal. You will then choose your table number."
@@ -814,7 +816,7 @@
       });
       if (store.get("consent." + shape.session(me).id) || shape.consent(me)) { consentButton.setDisabled(true); consentNote.textContent = "Group consent recorded."; }
       root.appendChild(el("div", { class: "screen" }, [
-        el("p", { class: "kicker" }, shape.scenario(me).title || "Belfer Lab"),
+        el("p", { class: "kicker" }, shape.scenario(me).title || "TIN PROPHET"),
         el("h1", null, shape.sideName(me)),
         el("div", { class: "waiting" }, [el("strong", null, "Waiting for the facilitator."), el("span", null, "The briefing will appear here when the session starts.")]),
         el("div", { class: "card is-quiet" }, [
@@ -1870,7 +1872,7 @@
       var error = el("div", { class: "notice is-error", role: "alert" });
       var button = el("button", { type: "submit", class: "btn btn-primary" }, "Continue");
       var form = el("form", { class: "card gate" }, [
-        el("p", { class: "kicker" }, "Belfer Lab"),
+        el("p", { class: "kicker" }, "TIN PROPHET"),
         el("h1", null, "Your table number"),
         el("p", { class: "lede" }, "Choose the number on the card in front of you (P1 to P12). Keep the same number all day. No name or email is asked for anywhere."),
         UI.field("Table number", select),

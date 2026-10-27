@@ -1,25 +1,26 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en-GB" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Belfer Lab</title>
+<title>TIN PROPHET — a sealed research lab</title>
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://lab-api.escalationlab.org; img-src 'self' data:; style-src 'self'; font-src 'self'">
 <meta name="referrer" content="same-origin">
 <meta name="robots" content="noindex, nofollow">
-<meta name="description" content="Belfer Lab: a private research lab. Access is by code only.">
+<meta name="description" content="TIN PROPHET: a sealed research lab. Access is by code only.">
 <meta name="author" content="Hallam Burnapp">
 <meta name="copyright" content="© 2026 Hallam Burnapp. All rights reserved.">
-<meta name="theme-color" content="#0a0e12">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<meta name="theme-color" content="#E6E9E1">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <link rel="stylesheet" href="lab.css">
 </head>
 <body>
 <header class="topbar" id="topbar">
   <div class="topbar-inner">
-    <span class="topbar-brand">BELFER LAB</span>
+    <img class="topbar-brand topbar-lockup" src="/brand/svg/lockup-sealed-lab.svg" alt="TIN PROPHET" width="452" height="100">
     <span class="topbar-item" id="topScenario"></span>
     <span class="topbar-item" id="topSide"></span>
     <span class="topbar-item" id="topTurn"></span>
@@ -27,6 +28,11 @@
     <span class="topbar-item topbar-timer mono" id="topTimer" role="timer" aria-live="off" aria-label="Turn timer"></span>
   </div>
   <div class="connection" id="connection" role="status" aria-atomic="true"></div>
+  <a class="el-link" href="/"><svg class="el-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="28" fill="none" stroke="currentColor" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="currentColor" stroke-width="5.5" fill="none"/>
+<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.55"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/>
+</svg><span>An Escalation Lab project</span></a>
 </header>
 
 <main class="app" id="main" aria-busy="true">

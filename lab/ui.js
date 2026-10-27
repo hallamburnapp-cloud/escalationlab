@@ -1,4 +1,4 @@
-// Belfer Lab — ui.js
+// TIN PROPHET (sealed research lab) — ui.js
 // Small DOM helpers, the turn-timer widget and a QR code renderer.
 // Rendering rule: every string that may carry data goes through textContent or
 // createTextNode. Nothing here takes data as HTML.
