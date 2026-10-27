@@ -67,7 +67,24 @@
     return err;
   }
 
-  // api("GET", "/api/me") -> parsed JSON. 401 clears the token and returns to the gate.
+  // A 401 on an authenticated request. Group and observer codes are only ever revoked by closing
+  // (or deleting) the session, so for those roles the 401 means the session is over and the screen
+  // says so; the "closed" marker keeps that screen through a reload. A facilitator's 401 (a code
+  // removed from FACILITATOR_CODES) returns to the gate as before.
+  function unauthorised() {
+    var role = auth.role();
+    auth.signOut();
+    if (role === "group" || role === "observer") {
+      store.set("closed", "1");
+      renderClosed();
+      return;
+    }
+    navigate(isParticipantRoute() ? "p" : "");
+  }
+
+  // api("GET", "/api/me") -> parsed JSON. 401 clears the token (see unauthorised()).
+  // opts.signal (an AbortSignal) is passed to fetch: the polls use it so that a request a
+  // half-open connection never answers is abandoned after a few intervals (see pollNow).
   function api(method, path, body, opts) {
     opts = opts || {};
     var headers = { "Accept": "application/json" };
@@ -80,7 +97,8 @@
       method: method,
       headers: headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store"
+      cache: "no-store",
+      signal: opts.signal || undefined
     }).then(function (response) {
       var dateHeader = response.headers.get("Date");
       if (dateHeader) serverClock.iso = new Date(dateHeader).toISOString();
@@ -88,12 +106,12 @@
         var data = null;
         try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
         if (response.status === 401 && !opts.noAuth) {
-          auth.signOut();
-          setConnection(false);
-          navigate(isParticipantRoute() ? "p" : "");
+          unauthorised();
           throw apiError(401, data || { error: "invalid_code" });
         }
         if (!response.ok) throw apiError(response.status, data || { error: "http_" + response.status });
+        // A 2xx whose body is not JSON is not the lab server (a static host answering for it).
+        if (text && data === null) throw apiError(response.status, { error: "http_" + response.status, message: "The reply was not JSON." });
         if (data && typeof data === "object" && data.now) serverClock.iso = data.now;
         if (data && typeof data === "object" && data.pollMs) setPollInterval(data.pollMs);
         return data;
@@ -105,7 +123,7 @@
   function download(path, filename) {
     var token = auth.token();
     return fetch(API_BASE + path, { headers: { "Authorization": "Bearer " + token }, cache: "no-store" }).then(function (response) {
-      if (response.status === 401) { auth.signOut(); navigate(""); throw apiError(401, {}); }
+      if (response.status === 401) { unauthorised(); throw apiError(401, {}); }
       if (!response.ok) return response.text().then(function (text) {
         var data = null; try { data = JSON.parse(text); } catch (e) { /* not JSON */ }
         throw apiError(response.status, data || {});
@@ -125,7 +143,8 @@
   }
 
   // Read a server-sent-event stream from a POST with fetch + ReadableStream.
-  // onEvent receives each parsed JSON object from "data:" lines.
+  // onEvent receives each parsed JSON object from "data:" lines. No timeout: a live
+  // reply legitimately streams for a minute or more.
   function streamPost(path, body, onEvent) {
     var token = auth.token();
     return fetch(API_BASE + path, {
@@ -134,7 +153,7 @@
       body: JSON.stringify(body),
       cache: "no-store"
     }).then(function (response) {
-      if (response.status === 401) { auth.signOut(); navigate(""); throw apiError(401, {}); }
+      if (response.status === 401) { unauthorised(); throw apiError(401, {}); }
       if (!response.ok) return response.text().then(function (text) {
         var data = null; try { data = JSON.parse(text); } catch (e) { /* not JSON */ }
         throw apiError(response.status, data || {});
@@ -212,6 +231,9 @@
   var polling = false;
 
   // show(key, build): rebuilds the screen only when the key changes; otherwise reuses it.
+  // A rebuilt screen moves keyboard focus to its heading (or to <main> when it has none) and
+  // announces the heading, so a screen reader hears that the page changed and where it is;
+  // a screen that focuses its own control inside build() (the gate's input) keeps that focus.
   function show(key, build) {
     if (current.key === key && current.ctx) return current.ctx;
     current.key = key;
@@ -224,6 +246,10 @@
     ctx._built = true;
     current.ctx = ctx;
     main.setAttribute("aria-busy", "false");
+    var head = main.querySelector("h1") || main;
+    head.setAttribute("tabindex", "-1");
+    if (!main.contains(document.activeElement)) head.focus({ preventScroll: true });
+    if (head !== main) UI.announce(head.textContent);
     window.scrollTo(0, 0);
     return ctx;
   }
@@ -251,19 +277,74 @@
     if (pollHandle) { clearInterval(pollHandle); pollHandle = setInterval(pollNow, POLL_MS); }
   }
 
-  function pollNow() {
-    if (!current.poll || polling) return;
+  // One poll at a time. Each poll's requests carry an AbortSignal that fires after three
+  // intervals (at least five seconds), so a request that a half-open connection never answers
+  // is abandoned, the banner shows, and polling goes on; without it `polling` stayed true until
+  // the browser's own fetch timeout, minutes later. An action handler calls pollNow(true) so the
+  // state the action changed (a server-gated panel, a released result) is fetched at once: a poll
+  // in flight for more than a second is taken as hung and aborted, a younger one is left to finish,
+  // and in both cases a fresh poll follows. The sequence number makes a superseded poll's result
+  // and its bookkeeping inert, so a late reply can never roll the screen back.
+  var pollSeq = 0;
+  var pollAbort = null;
+  var pollStartedAt = 0;
+  var pollQueued = false;
+  var POLL_STALE_MS = 1000;
+
+  function pollTimeoutMs() { return Math.max(5000, 3 * POLL_MS); }
+
+  function pollNow(force) {
+    if (!current.poll) return;
+    if (polling) {
+      if (force !== true) return;
+      pollQueued = true;
+      if (pollAbort && performance.now() - pollStartedAt > POLL_STALE_MS) pollAbort.abort();
+      return;
+    }
+    var seq = ++pollSeq;
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    pollAbort = controller;
+    pollStartedAt = performance.now();
+    var watchdog = setTimeout(function () { if (controller) controller.abort(); }, pollTimeoutMs());
     polling = true;
-    Promise.resolve().then(current.poll).then(function () {
-      setConnection(true);
+    Promise.resolve().then(function () { return current.poll(controller ? controller.signal : undefined); }).then(function () {
+      if (seq === pollSeq) setConnection(true);
     }, function (err) {
+      if (seq !== pollSeq) return;
       if (err && err.status) setConnection(true); else setConnection(false);
-    }).then(function () { polling = false; });
+    }).then(function () {
+      clearTimeout(watchdog);
+      if (seq !== pollSeq) return;
+      polling = false;
+      pollAbort = null;
+      if (pollQueued) { pollQueued = false; pollNow(); }
+    });
+  }
+
+  // The connection banner (#connection, role=status) is written only when the state changes,
+  // so a failed poll every few seconds does not re-announce it. On recovery a pending draft
+  // patch is sent at once, which is what the banner's wording promises a group.
+  var connectionOk = null;
+
+  function connectionMessage() {
+    if (isParticipantRoute()) return "Connection lost; retrying. Your answers stay on this page; press the button again once this message has gone.";
+    var role = auth.role();
+    if (role === "group") return "Connection lost; retrying. Keep working: what you have typed stays on this screen and is saved as soon as the connection returns. Do not reload the page.";
+    if (role === "observer") return "Connection lost; retrying. Your note stays in the box; press Save note again once this message has gone.";
+    return "Connection lost; retrying. The console will catch up when the connection returns.";
   }
 
   function setConnection(ok) {
+    ok = !!ok;
+    if (ok === connectionOk) return;
+    var wasLost = connectionOk === false;
+    connectionOk = ok;
     var node = document.getElementById("connection");
-    if (node) node.hidden = ok;
+    if (node) node.textContent = ok ? "" : connectionMessage();
+    if (ok && wasLost) {
+      UI.announce("Connection restored.");
+      if (Object.keys(pendingPatch).length) flushDraftNow();
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -304,8 +385,13 @@
   // ---------------------------------------------------------------------------
   // 4. Payload shape
   // The accessors below are the only code that knows the names of fields in the
-  // server's responses. Where the specification leaves a name open, the first name
-  // tried is the one the client's stub uses; alternatives are accepted after it.
+  // server's responses. The names are the server's, as reconciled in the table in
+  // docs/decisions.md ("Integration reconciliations"); each accessor reads one name.
+  // The documented dual reads are: timer.expired beside timer.expiredAt (the server
+  // sends both), me.now falling back to the Date header, the observer payload's
+  // sides[side].draft against the stored session's drafts (renderObserver), and a
+  // session stored before the one-observer-code-per-side fix, whose codes.observer is
+  // a single string (fshape.codes, mirrored in the lab server's session.js).
   // ---------------------------------------------------------------------------
 
   function turnOfStage(stage) {
@@ -313,25 +399,17 @@
     return m ? Number(m[2]) : null;
   }
 
-  function pick(obj, keys, fallback) {
-    for (var i = 0; i < keys.length; i++) {
-      if (obj && obj[keys[i]] !== undefined && obj[keys[i]] !== null) return obj[keys[i]];
-    }
-    return fallback;
-  }
-
   var shape = {
     session: function (me) { return me.session || {}; },
     stage: function (me) { return shape.session(me).stage || "setup"; },
-    now: function (me) { return me.now || shape.session(me).now || (shape.session(me).timer && shape.session(me).timer.now) || serverClock.iso; },
-    // The server marks expiry with expiredAt; the timer widget reads a boolean.
+    // Every role payload carries the server clock as `now`; the Date header is the fallback.
+    now: function (me) { return me.now || serverClock.iso; },
+    // The server marks expiry with expiredAt and sends `expired` beside it; the timer widget reads the boolean.
     timer: function (me) { var t = shape.session(me).timer; return t ? Object.assign({}, t, { expired: !!(t.expired || t.expiredAt) }) : null; },
     scenario: function (me) { return shape.session(me).scenario || {}; },
     content: function (me) { return me.content || {}; },
-    sideName: function (me) {
-      var c = shape.content(me);
-      return pick(c.side || {}, ["name"]) || pick(me, ["sideName"]) || (c.sides && c.sides[me.side] && c.sides[me.side].name) || me.side || "";
-    },
+    // content.side = { id, name, adversary, adversaryName } in the group payload.
+    sideName: function (me) { var c = shape.content(me); return (c.side && c.side.name) || me.side || ""; },
     sideNames: function (me) {
       var c = shape.content(me);
       var names = {};
@@ -342,13 +420,12 @@
     },
     adversary: function (me) { var c = shape.content(me); return (c.side && c.side.adversary) || null; },
     background: function (me) { return shape.content(me).background || {}; },
-    brief: function (me) { var c = shape.content(me); return c.brief || (c.briefs && c.briefs[me.side]) || {}; },
+    brief: function (me) { return shape.content(me).brief || {}; },
     riskReduction: function (me) { return shape.content(me).riskReduction || []; },
     levers: function (me) { return shape.content(me).levers || null; },
     // The server keys released turns by number (content.turns[n]); the screens read the current one.
     turn: function (me) {
       var c = shape.content(me);
-      if (c.turn) return c.turn;
       var n = turnOfStage(shape.stage(me));
       var t = n && c.turns ? c.turns[n] : null;
       return t ? Object.assign({ n: n }, t) : null;
@@ -356,10 +433,10 @@
     // Own-side actions this turn as the server records them: hotline [{t,text}], riskReduction [{t,measures}], redTeam, verification.
     actions: function (me, turn) { return (me.actions && me.actions[turn]) || {}; },
     panelOpened: function (me, turn) { return !!(me.marks && me.marks[turn] && me.marks[turn].panelOpenedAt); },
-    turnNumber: function (me) { var t = shape.turn(me); return (t && t.n) || turnOfStage(shape.stage(me)) || shape.session(me).turn || 1; },
     draft: function (me, turn) { return (me.draft && me.draft[turn]) || {}; },
-    assessments: function (me, turn) { return (me.assessments && me.assessments[turn]) || (me.draft && me.draft[turn] && me.draft[turn].assessments) || {}; },
+    assessments: function (me, turn) { return (me.assessments && me.assessments[turn]) || {}; },
     submission: function (me, turn) { return (me.submissions && me.submissions[turn]) || null; },
+    // Condition C only: me.ai = { status: "pending" | "approved", chat }.
     ai: function (me) { return me.ai || null; },
     assistantEnabled: function (me) {
       var a = shape.session(me).assistant;
@@ -368,50 +445,47 @@
       return !!(a && a.enabled);
     },
     // Panel roles in a fixed order; labels come from the server as labels[key] = { name, title }.
-    // panel.source (scripted_staff | scripted_ai | live_ai | not_available) is data, never a label.
+    // panel.reasoning[key] is present in condition C only. The group payload carries no source
+    // string for a side with a system; source: "not_available" marks a side without one.
     panelRoles: function (panel) {
       if (!panel) return [];
-      if (Array.isArray(panel.roles)) return panel.roles;
       return ["intel", "forecast", "adversary"].filter(function (key) { return panel[key]; }).map(function (key) {
         var role = panel[key];
-        var label = panel.labels && panel.labels[key];
+        var label = (panel.labels && panel.labels[key]) || {};
         return {
           key: key,
-          source: pick(role, ["source", "label"]) || (typeof label === "string" ? label : (label && label.name)) || "",
-          title: pick(role, ["title"]) || (label && typeof label === "object" && label.title) || (panel.titles && panel.titles[key]) || "",
+          source: label.name || "",
+          title: label.title || "",
           headline: role.headline || "",
           body: role.body || "",
           confidence: role.confidence,
           pathways: role.pathways || null,
-          reasoning: role.reasoning || (panel.reasoning && panel.reasoning[key]) || null
+          reasoning: (panel.reasoning && panel.reasoning[key]) || null
         };
       });
     },
-    // statementsReleased[turn] is what the other side released: { statement, observables, hotline }.
+    // statementsReleased[turn] is what the other side released: { statement, observables, hotline }
+    // (observables and hotline are arrays of strings); the other side's identity is content.side.
     statements: function (me, turn) {
       var c = shape.content(me);
-      var s = (me.statements && me.statements[turn]) || (c.statements && c.statements[turn]) || null;
       var released = me.statementsReleased && me.statementsReleased[turn];
-      var other = (s && s.other) || null;
-      if (!other && released && typeof released === "object") {
-        other = released.other || { side: shape.adversary(me), sideName: c.side && c.side.adversaryName, statement: released.statement || "", observables: released.observables || [], hotline: released.hotline || [] };
+      var other = null;
+      if (released && typeof released === "object") {
+        other = { side: shape.adversary(me), sideName: c.side && c.side.adversaryName, statement: released.statement || "", observables: released.observables || [], hotline: released.hotline || [] };
       }
-      var own = (s && s.own) || (shape.submission(me, turn) || {}).statement || "";
-      return { own: own, released: !!(released || (s && s.released)), other: other };
+      var own = (shape.submission(me, turn) || {}).statement || "";
+      return { own: own, released: !!released, other: other };
     },
     surveyUrl: function (me) { return (me.survey && me.survey.url) || ""; },
-    debrief: function (me) {
-      var d = me.debrief;
-      if (!d) return null;
-      return d.decisions || d.aiOutputs ? d : normaliseDebrief(me, d);
-    },
-    consent: function (me) { return !!(me.consent || me.consented); },
-    consentText: function (me) { return pick(shape.session(me), ["consentText"]) || pick(me, ["consentText"]) || ""; },
+    debrief: function (me) { return me.debrief ? normaliseDebrief(me, me.debrief) : null; },
+    consent: function (me) { return !!me.consent; },
+    consentText: function (me) { return shape.session(me).consentText || ""; },
     injects: function (turn) { return (turn && (turn.injects || [])) || []; }
   };
 
   // The server's debrief ({ own, sides: { side: { name, kind, brief, assessments, submissions, panels } }, branch })
-  // plus content.debrief ({ reveal, questions, openings, common }) in the shape debriefView renders.
+  // plus content.debrief ({ reveal, questions, openings, common }) in the shape debriefView renders. The
+  // facilitator's debrief carries reveal, questions and plenary itself and has no `own` side.
   function normaliseDebrief(me, d) {
     var cd = shape.content(me).debrief || {};
     var out = { reveal: d.reveal || cd.reveal || null, questions: d.questions || cd.questions || null, sideNames: {}, decisions: {}, assessments: {}, aiOutputs: {}, briefs: {} };
@@ -517,13 +591,22 @@
     });
   }
 
+  // The gate's messages separate a wrong code (401, the server's contract) from a deployment
+  // fault, so that on the day nobody re-types codes when the site points at the wrong address
+  // (404/405/5xx or a non-JSON reply: a static host answering for the API) or the server
+  // refuses the page's origin (403: CORS_ORIGINS).
   function gateErrorText(err) {
+    var origin = API_BASE || location.origin;
     if (err.status === 429) {
       var seconds = Number(err.retryAfter) || 60;
       return "Too many attempts; wait " + seconds + " seconds.";
     }
-    if (err.status === 401 || err.status === 403 || err.status === 404) return "That code was not recognised.";
+    if (err.status === 401) return "That code was not recognised.";
+    if (err.status === 403) return "The lab server is not configured to accept this page's address (" + location.origin + "). Tell the facilitator.";
     if (!err.status) return "Could not reach the lab server. Check the connection and try again.";
+    if (err.status === 404 || err.status === 405 || err.status >= 500 || /^http_\d+$/.test(String(err.code))) {
+      return "Could not reach the lab server at " + origin + ". The site may be pointing at the wrong address; tell the facilitator.";
+    }
     return "That code was not recognised.";
   }
 
@@ -576,7 +659,7 @@
   function groupStep(me, turn) {
     var saved = store.get(groupStepKey(me, turn));
     var sub = shape.submission(me, turn);
-    if (sub && (sub.statement || sub.statementAt || sub.statementSubmitted)) return "done";
+    if (sub && (sub.statement || sub.statementAt)) return "done";
     if (sub) return "statement";
     var a = shape.assessments(me, turn);
     if (!a.pre) return saved === "pre" ? "pre" : "indicators";
@@ -614,10 +697,13 @@
 
   // Autosave: every change is merged into the draft and sent as a PUT, debounced 400 ms.
   // flushDraftNow() sends whatever is pending at once (before Review, Submit and the assessments).
+  // A failed save keeps the patch and retries with backoff (2 s doubling to 16 s), and the
+  // connection banner's recovery sends it at once; a 409 (the turn is closed) is final.
   var pendingPatch = {};
   var pendingTurn = null;
   var saveStatus = null;
   var saveHandle = null;
+  var saveRetryMs = 0;
 
   function flushDraftNow() {
     clearTimeout(saveHandle);
@@ -627,10 +713,15 @@
     pendingPatch = {};
     if (!turn || !Object.keys(patch).length) return Promise.resolve();
     return api("PUT", "/api/me/draft", { turn: turn, patch: patch }).then(function () {
+      saveRetryMs = 0;
       if (saveStatus) saveStatus.textContent = "Saved";
     }, function (err) {
       Object.keys(patch).forEach(function (k) { if (pendingPatch[k] === undefined) pendingPatch[k] = patch[k]; });
-      if (saveStatus) saveStatus.textContent = err.status === 409 ? "Not saved: the turn is closed" : "Not saved; will retry";
+      if (err.status === 409) { if (saveStatus) saveStatus.textContent = "Not saved: the turn is closed"; return; }
+      if (saveStatus) saveStatus.textContent = "Not saved yet; kept here and sent when the connection returns";
+      saveRetryMs = saveRetryMs ? Math.min(saveRetryMs * 2, 16000) : 2000;
+      clearTimeout(saveHandle);
+      saveHandle = setTimeout(flushDraftNow, saveRetryMs);
     });
   }
 
@@ -664,8 +755,8 @@
     });
   }
 
-  function pollGroup() {
-    return api("GET", "/api/me").then(function (me) {
+  function pollGroup(signal) {
+    return api("GET", "/api/me", undefined, { signal: signal }).then(function (me) {
       group.me = me;
       renderGroup(me);
     });
@@ -693,10 +784,21 @@
     return renderGroupWaiting(me);
   }
 
+  // The closed screen: reached when the server reports stage "closed", and from unauthorised()
+  // once a session's codes have stopped working. The phone route has its own wording.
   function renderClosed() {
     setPoll(null);
-    show("closed", function (root) {
-      root.appendChild(el("div", { class: "waiting" }, [el("strong", null, "This session has closed."), el("span", null, "Thank you for taking part.")]));
+    clearTopBar();
+    var phone = isParticipantRoute();
+    show("closed:" + (phone ? "p" : "g"), function (root) {
+      // The gate stays reachable for the next session's code (a scanned link clears the marker itself).
+      var another = el("button", { type: "button", class: "btn btn-quiet btn-small" }, "Enter a different code");
+      another.addEventListener("click", function () { store.remove("closed"); renderGate({ participant: phone }); });
+      root.appendChild(el("div", { class: "screen" }, [
+        el("h1", null, "This session has closed."),
+        el("div", { class: "waiting" }, [el("strong", null, phone ? "Thank you. You can close this page." : "Thank you for taking part."), el("span", null, phone ? "" : "The facilitator has closed the session; this screen can be closed.")]),
+        el("div", { class: "actions" }, [another])
+      ]));
     });
   }
 
@@ -745,11 +847,24 @@
     return el("div", { class: "card" }, [el("h3", null, title), UI.list(items)]);
   }
 
+  // The briefing as a group reads it: role, Background, capabilities, the side's brief. Shared by
+  // the briefing screen and the facilitator's printed participant pack (renderConsolePreview).
+  function briefingView(me) {
+    var bg = shape.background(me);
+    var brief = shape.brief(me);
+    return el("div", { class: "screen" }, [
+      bg.role ? el("div", { class: "card is-quiet prose" }, [el("h2", null, "Your role"), UI.paras(bg.role), bg.guidance ? UI.paras(bg.guidance, "muted") : null]) : null,
+      el("h2", { class: "section-head" }, "Background"),
+      el("div", { class: "prose" }, UI.list(bg.shared || [], false, "plain")),
+      capabilitiesTable(me) ? el("div", { class: "card" }, [el("h3", null, "Capabilities"), capabilitiesTable(me)]) : null,
+      el("h2", { class: "section-head" }, "Your side"),
+      el("div", { class: "grid-3" }, [briefBox("What you know", brief.know), briefBox("What you think you know", brief.estimate), briefBox("Prepared options", brief.options)])
+    ]);
+  }
+
   function renderGroupBriefing(me) {
     var sid = shape.session(me).id;
     var ctx = show("group:briefing:" + sid, function (root) {
-      var bg = shape.background(me);
-      var brief = shape.brief(me);
       var readyKey = "ready." + sid;
       var readyNote = el("p", { class: "muted", role: "status" });
       var readyButton = el("button", { type: "button", class: "btn btn-primary" }, "Ready");
@@ -770,12 +885,7 @@
         el("p", { class: "kicker" }, "Briefing"),
         el("h1", null, shape.scenario(me).title || "Background"),
         el("p", { class: "lede" }, "You are " + shape.sideName(me) + "."),
-        bg.role ? el("div", { class: "card is-quiet prose" }, [el("h2", null, "Your role"), UI.paras(bg.role), bg.guidance ? UI.paras(bg.guidance, "muted") : null]) : null,
-        el("h2", { class: "section-head" }, "Background"),
-        el("div", { class: "prose" }, UI.list(bg.shared || [], false, "plain")),
-        capabilitiesTable(me) ? el("div", { class: "card" }, [el("h3", null, "Capabilities"), capabilitiesTable(me)]) : null,
-        el("h2", { class: "section-head" }, "Your side"),
-        el("div", { class: "grid-3" }, [briefBox("What you know", brief.know), briefBox("What you think you know", brief.estimate), briefBox("Prepared options", brief.options)]),
+        briefingView(me),
         el("div", { class: "card is-flag" }, [
           el("p", null, "When the table has read the briefing, press Ready. Each participant should also have completed the consent and the short opening questions on their phone."),
           el("div", { class: "actions" }, [readyButton]),
@@ -799,8 +909,23 @@
     var injects = shape.injects(turn);
     if (!injects.length) return null;
     return el("div", { class: "screen" }, injects.map(function (inject) {
-      return el("div", { class: "inject", role: "note" }, [el("span", { class: "inject-tag" }, "FACILITATOR INJECT"), UI.paras(typeof inject === "string" ? inject : inject.text)]);
+      return el("div", { class: "inject", role: "note" }, [el("span", { class: "inject-tag" }, "FACILITATOR INJECT"), UI.paras(inject.text)]);
     }));
+  }
+
+  // The turn's situation as a group reads it. Turn 1 shows the indicators as "Situation". Turn 2
+  // shows the opening for the confirmed cell, then the common text; its indicators are optional and
+  // follow both (schema.json), so no empty card is rendered. Shared with the printed pack.
+  function situationView(t) {
+    var indicatorsCard = t.indicators && t.indicators.length ? el("div", { class: "card prose" }, [el("h2", null, t.opening ? "Indicators" : "Situation"), UI.list(t.indicators, false, "plain")]) : null;
+    var commonCard = t.common && t.common.length ? el("div", { class: "card prose" }, UI.list(t.common, false, "plain")) : null;
+    return el("div", { class: "screen" }, [
+      t.opening && t.opening.length ? el("div", { class: "card prose" }, [el("h2", null, "What has happened"), UI.list(t.opening, false, "plain")]) : null,
+      t.opening ? commonCard : indicatorsCard,
+      t.opening ? indicatorsCard : commonCard,
+      t.dilemma ? el("div", { class: "card is-quiet" }, [el("h3", null, "The dilemma"), UI.paras(t.dilemma)]) : null,
+      t.questions && t.questions.length ? el("div", { class: "card is-quiet" }, [el("h3", null, "For discussion"), UI.list(t.questions)]) : null
+    ]);
   }
 
   // The frame shared by every turn screen: heading, step list, timer banner and injects.
@@ -837,17 +962,43 @@
       var next = el("button", { type: "button", class: "btn btn-primary" }, "Continue to the initial assessment");
       next.addEventListener("click", function () { setGroupStep(me, turn, "pre"); });
       var frame = turnFrame(me, turn, "Indicators", "indicators");
-      UI.append(frame.body, [
-        t.opening && t.opening.length ? el("div", { class: "card prose" }, [el("h2", null, "What has happened"), UI.list(t.opening, false, "plain")]) : null,
-        el("div", { class: "card prose" }, [el("h2", null, t.opening ? "Indicators" : "Situation"), UI.list(t.indicators || [], false, "plain")]),
-        t.common && t.common.length ? el("div", { class: "card prose" }, UI.list(t.common, false, "plain")) : null,
-        t.dilemma ? el("div", { class: "card is-quiet" }, [el("h3", null, "The dilemma"), UI.paras(t.dilemma)]) : null,
-        t.questions && t.questions.length ? el("div", { class: "card is-quiet" }, [el("h3", null, "For discussion"), UI.list(t.questions)]) : null,
-        el("div", { class: "actions is-end" }, [next])
-      ]);
+      UI.append(frame.body, [situationView(t), el("div", { class: "actions is-end" }, [next])]);
       root.appendChild(frame.node);
       return { update: frame.update };
     });
+  }
+
+  // A 0 to 100 slider with a typed-value field beside it, two-way bound. The slider starts at the
+  // midpoint reading "Not set" until an input event fires, so a group that judges exactly 50 types
+  // it instead of moving the slider away and back; nothing is recorded before an input event
+  // (focus, pointerdown and Tab set nothing). opts: { id, label, min, max, value, locked, onSet(n) }.
+  function rangeField(opts) {
+    var min = opts.min || 0, max = opts.max || 100;
+    var value = opts.value === undefined || opts.value === null || opts.value === "" ? null : Number(opts.value);
+    var input = el("input", { type: "range", min: String(min), max: String(max), step: "1", id: opts.id });
+    var output = el("output", { for: opts.id, class: value === null ? "is-unset" : "" }, value === null ? "Not set" : String(value));
+    var number = el("input", { type: "number", min: String(min), max: String(max), step: "1", inputmode: "numeric", class: "range-number", id: opts.id + "-number", "aria-label": opts.label + " (type a value from " + min + " to " + max + ")" });
+    input.value = value === null ? "50" : String(value);
+    number.value = value === null ? "" : String(value);
+    input.setAttribute("aria-valuetext", value === null ? "not set" : value + " per cent");
+    if (opts.locked) { input.disabled = true; number.disabled = true; }
+    function set(n) {
+      value = n;
+      output.textContent = String(n);
+      output.className = "";
+      input.setAttribute("aria-valuetext", n + " per cent");
+      opts.onSet(n);
+    }
+    input.addEventListener("input", function () { number.value = input.value; set(Number(input.value)); });
+    number.addEventListener("input", function () {
+      var n = number.value === "" ? NaN : Number(number.value);
+      if (!isFinite(n) || n < min || n > max || n !== Math.round(n)) return;
+      input.value = String(n);
+      set(n);
+    });
+    // Leaving the field with nothing usable in it shows the recorded value again (or nothing when none).
+    number.addEventListener("change", function () { number.value = value === null ? "" : String(value); });
+    return { input: input, number: number, row: el("div", { class: "range-row has-number" }, [input, output, number]), help: el("div", { class: "help" }, min + " to " + max + ". Move the slider or type a value.") };
   }
 
   // 6.2 / 6.5 Initial and updated assessment (three fields; the API calls the phase "pre"/"post")
@@ -884,21 +1035,13 @@
       });
 
       function slider(fieldKey, def) {
-        var input = el("input", { type: "range", min: String(def.min || 0), max: String(def.max || 100), step: "1", id: phase + "-" + fieldKey });
-        var output = el("output", { for: input.id, class: values[fieldKey] === null ? "is-unset" : "" }, values[fieldKey] === null ? "Not set" : String(values[fieldKey]));
-        input.value = values[fieldKey] === null ? "50" : String(values[fieldKey]);
-        if (locked) input.disabled = true;
-        input.setAttribute("aria-valuetext", values[fieldKey] === null ? "not set" : values[fieldKey] + " per cent");
-        input.addEventListener("input", function () {
-          values[fieldKey] = Number(input.value);
-          output.textContent = String(values[fieldKey]);
-          output.className = "";
-          input.setAttribute("aria-valuetext", values[fieldKey] + " per cent");
-          var patch = {}; patch[prefix + fieldKey] = values[fieldKey];
+        var range = rangeField({ id: phase + "-" + fieldKey, label: def.text, min: def.min, max: def.max, value: values[fieldKey], locked: locked, onSet: function (n) {
+          values[fieldKey] = n;
+          var patch = {}; patch[prefix + fieldKey] = n;
           draftChange(me, turn, patch);
           checkComplete();
-        });
-        return el("div", { class: "field" }, [el("label", { for: input.id }, def.text), el("div", { class: "range-row" }, [input, output]), el("div", { class: "help" }, "0 to 100. Move the slider to set a value.")]);
+        } });
+        return el("div", { class: "field" }, [el("label", { for: range.input.id }, def.text), range.row, range.help]);
       }
 
       submit.addEventListener("click", function () {
@@ -912,7 +1055,7 @@
           a[turn][phase] = { intent: values.intent, probability: values.probability, confidence: values.confidence };
           store.set("panelArrived." + shape.session(me).id + "." + turn, String(Math.round(performance.now())));
           setGroupStep(me, turn, phase === "pre" ? "panel" : "decision");
-          pollNow();
+          pollNow(true);
         }, function (err) {
           error.textContent = "Could not save the assessment: " + err.message;
           submit.disabled = false;
@@ -940,17 +1083,13 @@
     return show(key, function (root) {
       var sid = shape.session(me).id;
       var openedKey = "panelOpened." + sid + "." + turn;
-      var t = shape.turn(me) || {};
-      var opened = !!(store.get(openedKey) || t.panelOpened || shape.panelOpened(me, turn));
+      var opened = !!(store.get(openedKey) || shape.panelOpened(me, turn));
       var arrivedAt = Number(store.get("panelArrived." + sid + "." + turn)) || performance.now();
       var content = el("div", { class: "screen" });
       var openButton = el("button", { type: "button", class: "btn btn-primary" }, "Open assessment");
       var openNote = el("p", { class: "muted", role: "status" });
-      var gateCard = el("div", { class: "card is-flag" }, [
-        el("p", null, "The assessment for this turn is ready to be opened. Opening it is recorded."),
-        el("div", { class: "actions" }, [openButton]),
-        openNote
-      ]);
+      var gateText = el("p", null, "");
+      var gateCard = el("div", { class: "card is-flag" }, [gateText, el("div", { class: "actions" }, [openButton]), openNote]);
       var measuresCard = el("div");
       var assistantCard = el("div");
       var next = el("button", { type: "button", class: "btn btn-primary" }, "Continue to the updated assessment");
@@ -962,11 +1101,14 @@
       openButton.addEventListener("click", function () {
         openButton.disabled = true;
         var waitMs = Math.max(0, Math.round(performance.now() - arrivedAt));
-        api("POST", "/api/me/event", { type: "panel_opened", payload: { turn: turn, wait_ms: waitMs, client_elapsed_ms: waitMs } }).then(function () {
+        api("POST", "/api/me/event", { type: "panel_opened", payload: { turn: turn, wait_ms: waitMs } }).then(function () {
           store.set(openedKey, "1");
           opened = true;
           update(group.me || me);
           UI.announce("Assessment opened.");
+          // Disabling the focused button drops focus to <body>; move it to the panel's heading.
+          var heading = content.querySelector("h2");
+          if (heading) { heading.setAttribute("tabindex", "-1"); heading.focus(); }
         }, function (err) { openButton.disabled = false; openNote.textContent = "Could not open: " + err.message; });
       });
 
@@ -976,26 +1118,34 @@
 
       var lastPanelJson = null;
       var measuresBuilt = false;
+      var wasPreparing = null; // the previous poll's `preparing`, so the ready note is written once
       function update(me2) {
         frame.update(me2);
         var t2 = shape.turn(me2) || {};
         var ai = shape.ai(me2);
-        var preparing = !!(ai && ai.status && ai.status !== "approved") || t2.panel === "pending";
+        var preparing = !!(ai && ai.status && ai.status !== "approved");
         var panel = t2.panel && typeof t2.panel === "object" ? t2.panel : null;
-        var notAvailable = !!(panel && (panel.status === "not_available" || panel.source === "not_available")) || t2.panelNotAvailable === true || (t2.analysts && !panel && !preparing && !ai);
+        var notAvailable = !!(panel && panel.source === "not_available") || !!(t2.analysts && !panel && !preparing && !ai);
         if (!opened) {
           gateCard.hidden = false;
           if (preparing) {
+            setText(gateText, "The assessment for this turn is being prepared. You will be able to open it when it is ready; opening it is recorded.");
             openButton.disabled = true;
-            openButton.textContent = "Assessment being prepared";
-            openNote.textContent = "Please wait. The assessment will open when it is ready.";
+            setText(openButton, "Assessment being prepared");
+            setText(openNote, "Please wait. This page refreshes on its own.");
           } else {
+            setText(gateText, "The assessment for this turn is ready to be opened. Opening it is recorded.");
             openButton.disabled = false;
-            openButton.textContent = "Open assessment";
-            openNote.textContent = "";
+            setText(openButton, "Open assessment");
+            // Condition C: the facilitator has just approved the panel. openNote is a status
+            // region, so the sentence is announced; the button takes focus so Enter opens it.
+            if (wasPreparing === true) { setText(openNote, "The assessment is ready to open."); openButton.focus(); }
+            else if (wasPreparing === null) setText(openNote, "");
           }
+          wasPreparing = preparing;
           return;
         }
+        wasPreparing = preparing;
         gateCard.hidden = true;
         next.disabled = false;
         var json = JSON.stringify([panel, t2.analysts, notAvailable]);
@@ -1022,6 +1172,11 @@
       update(me);
       return { update: update };
     });
+  }
+
+  // Assign textContent only when it changes, so a live region is not re-announced on every poll.
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
   }
 
   function panelView(me, turn, panel) {
@@ -1075,7 +1230,7 @@
       api("POST", "/api/me/action", { turn: turn, action: "verification", payload: {} }).then(function (res) {
         verifyNote.textContent = "Verification requested. The result will appear here when it arrives.";
         if (res && res.result) showVerification(res.result);
-        pollNow();
+        pollNow(true);
       }, function (err) {
         if (err.code === "not_available") { verifyNote.textContent = "No further verification is available to your side this turn."; return; }
         if (err.code === "already_requested") { verifyNote.textContent = "Verification has already been requested."; return; }
@@ -1096,8 +1251,8 @@
     var redButton = UI.confirmButton("Convene a red team", "Convene a red team to challenge the assessment?", function () {
       redButton.setDisabled(true);
       api("POST", "/api/me/action", { turn: turn, action: "red_team", payload: {} }).then(function (res) {
-        showRedTeam((res && (res.result || res.redTeam)) || "");
-        pollNow();
+        showRedTeam((res && res.result) || "");
+        pollNow(true);
       }, function (err) { redNote.textContent = "Could not convene: " + err.message; redButton.setDisabled(false); });
     });
     function showRedTeam(text) {
@@ -1113,7 +1268,7 @@
     var hotlineSent = el("div", { class: "measure-result" });
     var hotlineNote = el("p", { class: "muted", role: "status" });
     hotlineInput.addEventListener("input", function () { updateCount(hotlineCount, hotlineInput.value, defs.hotline.maxWords || 80); });
-    var hotlineButton = UI.confirmButton("Send hotline message", "Send this message to the other side? It is delivered at the next report-back.", function () {
+    var hotlineButton = UI.confirmButton("Send hotline message", "Send this message to the other side's leadership?", function () {
       var text = hotlineInput.value.trim();
       if (!text) { hotlineNote.textContent = "Write the message first."; return; }
       if (UI.wordCount(text) > (defs.hotline.maxWords || 80)) { hotlineNote.textContent = "The message is over the word limit."; return; }
@@ -1128,7 +1283,7 @@
     });
     wrap.appendChild(el("div", { class: "measure" }, [
       el("h3", null, "Hotline message"),
-      UI.field(defs.hotline.label || "Hotline message to the other side", hotlineInput, { help: "Delivered verbatim to the other side at the next report-back.", after: hotlineCount }),
+      UI.field(defs.hotline.label || "Hotline message to the other side", hotlineInput, { help: "Delivered verbatim to the other side's leadership. They see it no later than the next report-back.", after: hotlineCount }),
       el("div", { class: "actions" }, [hotlineButton]), hotlineNote, hotlineSent
     ]));
 
@@ -1155,28 +1310,27 @@
     });
     if (rr.length) wrap.appendChild(el("div", { class: "measure" }, [rrGroup, el("div", { class: "actions" }, [rrButton]), rrNote]));
 
-    // Restore from the server's view of this turn (after a reload or on delivery).
+    // Restore from the server's view of this turn (after a reload or on delivery). The turn
+    // material carries verification { available, requested, requestedAt, delivered, result? } and,
+    // once convened, the redTeam text; me.actions[turn] carries hotline [{t,text}] and
+    // riskReduction [{t,measures}].
     wrap.refresh = function (me2) {
       var t2 = shape.turn(me2) || {};
-      var a = Object.assign({}, shape.actions(me2, turn), t2.actions || {});
-      var v = a.verification || t2.verification || null;
+      var a = shape.actions(me2, turn);
+      var v = t2.verification || null;
       if (v) {
         if (v.result) showVerification(v.result);
-        else if (v.requested || v.requestedAt) { verifyButton.setDisabled(true); if (!verifyNote.textContent) verifyNote.textContent = "Verification requested. The result will appear here when it arrives."; }
+        else if (v.requested) { verifyButton.setDisabled(true); if (!verifyNote.textContent) verifyNote.textContent = "Verification requested. The result will appear here when it arrives."; }
         else if (v.available === false) { verifyButton.setDisabled(true); verifyNote.textContent = "No further verification is available to your side this turn."; }
       }
-      var red = t2.redTeam || (a.redTeam && (a.redTeam.text || a.redTeam.result)) || null;
-      if (red && typeof red === "string" && !redResult.childNodes.length) showRedTeam(red);
-      var sent = a.hotline || t2.hotline || [];
-      if (Array.isArray(sent) && sent.length && !hotlineSent.childNodes.length) {
-        sent.forEach(function (h) { UI.append(hotlineSent, el("div", null, [el("span", { class: "tag" }, "Sent"), UI.paras(typeof h === "string" ? h : h.text)])); });
+      if (typeof t2.redTeam === "string" && t2.redTeam && !redResult.childNodes.length) showRedTeam(t2.redTeam);
+      var sent = a.hotline || [];
+      if (sent.length && !hotlineSent.childNodes.length) {
+        sent.forEach(function (h) { UI.append(hotlineSent, el("div", null, [el("span", { class: "tag" }, "Sent"), UI.paras(h.text)])); });
       }
-      var proposed = a.riskReduction || t2.riskReductionProposed || [];
-      if (Array.isArray(proposed) && proposed.length) {
-        var ids = [];
-        proposed.forEach(function (p) { if (typeof p === "string") ids.push(p); else if (p && Array.isArray(p.measures)) ids = ids.concat(p.measures); else if (p && p.id) ids.push(p.id); });
-        rrBoxes.forEach(function (b) { if (ids.indexOf(b.value) >= 0 && !b.checked) { b.checked = true; b.dispatchEvent(new Event("change")); } });
-      }
+      var ids = [];
+      (a.riskReduction || []).forEach(function (p) { if (p && Array.isArray(p.measures)) ids = ids.concat(p.measures); });
+      rrBoxes.forEach(function (b) { if (ids.indexOf(b.value) >= 0 && !b.checked) { b.checked = true; b.dispatchEvent(new Event("change")); } });
     };
     wrap.refresh(me);
     var holder = el("div");
@@ -1217,7 +1371,7 @@
       loaded = true;
       api("GET", "/api/me/assistant?turn=" + turn).then(function (res) {
         UI.clear(body);
-        ((res && res.messages) || []).forEach(function (m) { addMessage(m.role === "user" ? "user" : "assistant", m.text || m.content || ""); });
+        ((res && res.messages) || []).forEach(function (m) { addMessage(m.role === "user" ? "user" : "assistant", m.text || ""); });
         if (!body.childNodes.length) body.appendChild(el("p", { class: "faint" }, "Ask about your side's materials and the assessment. The assistant answers only from what your side has."));
       }, function (err) { addMessage("error", err.code === "assistant_disabled" ? "The assistant is not available." : "Could not load the conversation: " + err.message); });
     }
@@ -1358,16 +1512,8 @@
 
       function confidenceField() {
         var def = defs.decision.recommendation_confidence;
-        var input = el("input", { type: "range", min: String(def.min || 0), max: String(def.max || 100), step: "1", id: "d-recommendation_confidence" });
-        var has = draft.recommendation_confidence !== undefined && draft.recommendation_confidence !== null && draft.recommendation_confidence !== "";
-        input.value = has ? String(draft.recommendation_confidence) : "50";
-        if (locked) input.disabled = true;
-        var output = el("output", { for: input.id, class: has ? "" : "is-unset" }, has ? String(draft.recommendation_confidence) : "Not set");
-        input.addEventListener("input", function () {
-          output.textContent = input.value; output.className = "";
-          draftChange(me, turn, { recommendation_confidence: Number(input.value) });
-        });
-        return el("div", { class: "field" }, [el("label", { for: input.id }, def.label), el("div", { class: "range-row" }, [input, output]), el("div", { class: "help" }, "0 to 100.")]);
+        var range = rangeField({ id: "d-recommendation_confidence", label: def.label, min: def.min, max: def.max, value: draft.recommendation_confidence, locked: locked, onSet: function (n) { draftChange(me, turn, { recommendation_confidence: n }); } });
+        return el("div", { class: "field" }, [el("label", { for: range.input.id }, def.label), range.row, range.help]);
       }
 
       var problems = el("div", { class: "notice", role: "alert" });
@@ -1455,7 +1601,7 @@
           subs[turn] = Object.assign({}, subs[turn] || {}, { record: (res && res.record) || shape.draft(me, turn) });
           UI.announce("Advice submitted.");
           setGroupStep(me, turn, "statement");
-          pollNow();
+          pollNow(true);
         }, function (err) {
           error.textContent = "Could not submit: " + err.message;
           submit.setDisabled(false);
@@ -1497,7 +1643,7 @@
           subs[turn] = Object.assign({}, subs[turn] || {}, { statement: text });
           UI.announce("Statement submitted.");
           setGroupStep(me, turn, "done");
-          pollNow();
+          pollNow(true);
         }, function (err) { error.textContent = "Could not submit: " + err.message; submit.setDisabled(false); });
       }, { class: "btn-primary", yesLabel: "Submit" });
       var frame = turnFrame(me, turn, "Public statement", "statement");
@@ -1520,7 +1666,7 @@
       var frame = turnFrame(me, turn, "Submitted", "done");
       UI.append(frame.body, [
         el("div", { class: "waiting" }, [el("strong", null, "Waiting for the other side / facilitator."), el("span", null, "Your record for this turn is below.")]),
-        sub.timedOut || sub.timed_out ? el("div", { class: "notice" }, "Submitted after the time limit.") : null,
+        sub.timedOut ? el("div", { class: "notice" }, "Submitted after the time limit.") : null,
         el("div", { class: "card" }, [el("h2", null, "Your advice"), recordView(me, record, { assessments: shape.assessments(me, turn), statement: sub.statement || shape.draft(me, turn).statement })])
       ]);
       root.appendChild(frame.node);
@@ -1555,11 +1701,9 @@
         var card = el("div", { class: "card" }, [el("h2", null, otherName + ": public statement"), other.statement ? UI.paras(other.statement) : el("p", { class: "faint" }, "The other side made no public statement.")]);
         otherBlock.appendChild(card);
         var observables = other.observables || [];
-        otherBlock.appendChild(el("div", { class: "card" }, [el("h2", null, "What you can observe"), observables.length ? UI.list(observables.map(function (o) { return typeof o === "string" ? o : o.text; })) : el("p", { class: "faint" }, "No change in the other side's posture has been observed.")]));
-        var hotline = other.hotline || other.hotlineMessages;
-        if (hotline && (typeof hotline === "string" || hotline.length)) {
-          var items = typeof hotline === "string" ? [hotline] : hotline.map(function (h) { return typeof h === "string" ? h : h.text; });
-          otherBlock.appendChild(el("div", { class: "card is-flag" }, [el("h2", null, "Hotline message received"), UI.list(items, false, "plain")]));
+        otherBlock.appendChild(el("div", { class: "card" }, [el("h2", null, "What you can observe"), observables.length ? UI.list(observables) : el("p", { class: "faint" }, "No change in the other side's posture has been observed.")]));
+        if (other.hotline && other.hotline.length) {
+          otherBlock.appendChild(el("div", { class: "card is-flag" }, [el("h2", null, "Hotline message received"), UI.list(other.hotline, false, "plain")]));
         }
       }
       update(me);
@@ -1616,55 +1760,51 @@
     });
   }
 
-  // Shared by the group debrief and the facilitator's debrief view.
+  // Shared by the group debrief and the facilitator's debrief view. `d` is normaliseDebrief's
+  // shape: reveal, questions, sideNames, decisions (submissions by side and turn), assessments,
+  // aiOutputs (panels by side and turn), briefs, path { cells, openingsNotTaken }, plenary.
+  // The reveal is the participant-facing ground truth; facilitator.groundTruth never reaches here.
   function debriefView(me, d) {
     var wrap = el("div", { class: "debrief" });
     var names = Object.assign({}, shape.sideNames(me), d.sideNames || {});
     function nameOf(side) { return names[side] || side; }
     function section(title, node) { if (!node) return; wrap.appendChild(el("h2", { class: "section-head" }, title)); wrap.appendChild(node); }
-    var truth = d.groundTruth || d.ground_truth;
-    if (truth) section("Ground truth", el("div", { class: "card prose" }, UI.list(Array.isArray(truth) ? truth : [truth], false, "plain")));
     if (d.reveal) section("What happened", el("div", { class: "card prose" }, UI.list(Array.isArray(d.reveal) ? d.reveal : [d.reveal], false, "plain")));
-    var path = d.path || d.branch;
-    if (path) {
-      var cells = path.cells || path.confirmed || path;
+    if (d.path) {
+      var cells = d.path.cells || {};
       var cellNode = el("div", { class: "card" }, [el("h3", null, "The path this session took")]);
       var dl = el("dl", { class: "pairs" });
       Object.keys(cells).forEach(function (side) { if (typeof cells[side] === "string") UI.append(dl, [el("dt", null, nameOf(side)), el("dd", null, cells[side])]); });
       if (dl.childNodes.length) cellNode.appendChild(dl);
-      if (path.rule || path.rules) cellNode.appendChild(renderAny(path.rule || path.rules));
       section("Branch", cellNode);
-      var notTaken = path.openingsNotTaken || d.openingsNotTaken;
+      var notTaken = d.path.openingsNotTaken;
       if (notTaken) {
         var nt = el("div", { class: "screen" });
         Object.keys(notTaken).forEach(function (k) {
-          var v = notTaken[k];
-          nt.appendChild(el("div", { class: "card is-quiet prose" }, [el("h3", null, k), renderAny(v)]));
+          nt.appendChild(el("div", { class: "card is-quiet prose" }, [el("h3", null, k), renderAny(notTaken[k])]));
         });
         section("The openings not taken", nt);
       }
     }
-    var decisions = d.decisions || d.submissions;
-    if (decisions) {
+    if (d.decisions) {
       var dec = el("div", { class: "side-cols" });
-      Object.keys(decisions).forEach(function (side) {
+      Object.keys(d.decisions).forEach(function (side) {
         var col = el("div", { class: "card" }, [el("h3", null, nameOf(side))]);
-        var turns = decisions[side] || {};
+        var turns = d.decisions[side] || {};
         Object.keys(turns).sort().forEach(function (turn) {
           var rec = turns[turn] || {};
-          var assessments = (d.assessments && d.assessments[side] && d.assessments[side][turn]) || rec.assessments || null;
+          var assessments = (d.assessments && d.assessments[side] && d.assessments[side][turn]) || null;
           col.appendChild(el("h3", null, "Turn " + turn));
-          col.appendChild(recordView(me, rec.record || rec, { assessments: assessments, statement: rec.statement }));
+          col.appendChild(recordView(me, rec.record || {}, { assessments: assessments, statement: rec.statement }));
         });
         dec.appendChild(col);
       });
       section("Both sides' decisions", dec);
     }
-    var outputs = d.aiOutputs || d.panels || d.ai;
-    if (outputs) {
+    if (d.aiOutputs) {
       var out = el("div", { class: "screen" });
-      Object.keys(outputs).forEach(function (side) {
-        var turns = outputs[side] || {};
+      Object.keys(d.aiOutputs).forEach(function (side) {
+        var turns = d.aiOutputs[side] || {};
         Object.keys(turns).sort().forEach(function (turn) {
           var p = turns[turn];
           if (!p || typeof p !== "object") return;
@@ -1685,11 +1825,6 @@
     }
     if (d.questions) section("Questions for discussion", el("div", { class: "card" }, UI.list(d.questions)));
     if (d.plenary) section("Plenary (facilitator)", el("div", { class: "card" }, renderAny(d.plenary)));
-    var known = ["groundTruth", "ground_truth", "reveal", "path", "branch", "openingsNotTaken", "decisions", "submissions", "assessments", "aiOutputs", "panels", "ai", "questions", "sideNames", "briefs", "plenary", "own"];
-    Object.keys(d).forEach(function (k) {
-      if (known.indexOf(k) >= 0) return;
-      section(k.replace(/_/g, " "), el("div", { class: "card" }, renderAny(d[k])));
-    });
     return wrap;
   }
 
@@ -1752,8 +1887,8 @@
     });
   }
 
-  function pollParticipant() {
-    return api("GET", "/api/me").then(function (me) {
+  function pollParticipant(signal) {
+    return api("GET", "/api/me", undefined, { signal: signal }).then(function (me) {
       participant.me = me;
       setTopBar({ scenario: shape.scenario(me).shortTitle, side: shape.sideName(me), stage: shape.stage(me), timer: null });
       renderParticipantStage(me);
@@ -1801,7 +1936,7 @@
         button.disabled = !t;
       }
       fill(text);
-      if (!text) loadForms().then(function (forms) { if (forms.consentText || forms.consent) fill(forms.consentText || forms.consent); }).catch(function () { /* placeholder stays */ });
+      if (!text) loadForms().then(function (forms) { if (forms.consentText) fill(forms.consentText); }).catch(function () { /* placeholder stays */ });
       button.addEventListener("click", function () {
         if (!box.checked) { error.textContent = "Tick the box to confirm you consent."; return; }
         button.disabled = true;
@@ -1907,7 +2042,7 @@
       var holder = el("div", { class: "screen" });
       root.appendChild(el("div", { class: "screen" }, [el("p", { class: "kicker" }, "Participant " + pid), el("h1", null, "Survey"), holder]));
       loadForms().then(function (forms) {
-        var items = forms.survey || forms.post || [];
+        var items = forms.survey || [];
         var written = forms.written || [];
         var answers = {};
         var writtenAnswers = {};
@@ -1916,7 +2051,7 @@
         var sections = [];
         var lastSection = null;
         var instruction = (forms.scales && forms.scales.likert5 && forms.scales.likert5.instruction) || "Rate from 1 (Strongly Disagree) to 5 (Strongly Agree)";
-        sections.push(el("p", { class: "lede" }, instruction + ". Choose Not applicable where a question does not apply to you."));
+        sections.push(el("p", { class: "lede" }, instruction.replace(/\.?$/, ".")));
         items.forEach(function (item) {
           if (item.section && item.section !== lastSection) { lastSection = item.section; sections.push(el("h2", { class: "section-head" }, item.section)); }
           sections.push(surveyItem(item, forms.scales, answers, !!forms.sawAI));
@@ -1973,9 +2108,15 @@
     ]);
   }
 
+  // GET /api/scenarios: [{ id, title, shortTitle, sides: { id: { name, hasAI, adversary, aiName } } }].
   function loadScenarios() {
     if (console_.scenarios) return Promise.resolve(console_.scenarios);
-    return api("GET", "/api/scenarios").then(function (list) { console_.scenarios = Array.isArray(list) ? list : (list.scenarios || []); return console_.scenarios; });
+    return api("GET", "/api/scenarios").then(function (list) { console_.scenarios = list || []; return console_.scenarios; });
+  }
+
+  function scenarioSides(scenario) {
+    var sides = (scenario && scenario.sides) || {};
+    return Object.keys(sides).map(function (k) { return Object.assign({ id: k }, sides[k]); });
   }
 
   function renderConsole(parsed) {
@@ -1994,14 +2135,15 @@
       root.appendChild(el("div", { class: "screen" }, [el("p", { class: "kicker" }, "Facilitator console"), el("h1", null, "Sessions"), consoleNav(), table]));
       return { table: table };
     });
-    setPoll(function () {
-      return api("GET", "/api/sessions").then(function (list) {
-        var sessions = Array.isArray(list) ? list : (list.sessions || []);
+    // GET /api/sessions: [{ id, label, scenario: { id, title, shortTitle }, condition, mode, stage, status, createdAt }].
+    setPoll(function (signal) {
+      return api("GET", "/api/sessions", undefined, { signal: signal }).then(function (sessions) {
+        sessions = sessions || [];
         UI.clear(ctx.table);
         if (!sessions.length) { ctx.table.appendChild(el("p", { class: "muted" }, "No sessions yet. Create one from New session.")); return; }
         var rows = sessions.map(function (s) {
           var link = el("a", { href: "#console/session/" + encodeURIComponent(s.id) }, s.label || s.id);
-          var scenario = (s.scenario && (s.scenario.shortTitle || s.scenario.title)) || s.scenarioId || "";
+          var scenario = (s.scenario && (s.scenario.shortTitle || s.scenario.title)) || "";
           return el("tr", null, [el("td", null, link), el("td", null, scenario), el("td", null, [s.condition ? el("span", { class: "badge" }, "Condition " + s.condition) : null, " ", s.mode || ""]), el("td", null, stageName(s.stage)), el("td", { class: "mono small" }, (s.createdAt || "").replace("T", " ").slice(0, 16))]);
         });
         ctx.table.appendChild(el("div", { class: "table-wrap" }, el("table", null, [el("thead", null, el("tr", null, [el("th", { scope: "col" }, "Label"), el("th", { scope: "col" }, "Scenario"), el("th", { scope: "col" }, "Condition · mode"), el("th", { scope: "col" }, "Stage"), el("th", { scope: "col" }, "Created")])), el("tbody", null, rows)])));
@@ -2021,10 +2163,9 @@
         var sideHolder = el("div", { class: "field" });
         var groupSide = el("select", { id: "newGroupSide" });
         function fillSides() {
-          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0] || {};
-          var sides = Array.isArray(s.sides) ? s.sides : Object.keys(s.sides || {}).map(function (k) { return Object.assign({ id: k }, s.sides[k]); });
+          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0];
           UI.clear(groupSide);
-          sides.forEach(function (side) { groupSide.appendChild(el("option", { value: side.id || side }, (side.name || side.id || side) + (side.hasAI === false ? " (no assessment system)" : ""))); });
+          scenarioSides(s).forEach(function (side) { groupSide.appendChild(el("option", { value: side.id }, (side.name || side.id) + (side.hasAI === false ? " (no assessment system)" : ""))); });
         }
         fillSides();
         scenarioSelect.addEventListener("change", fillSides);
@@ -2056,9 +2197,8 @@
           event.preventDefault();
           submit.disabled = true;
           error.textContent = "";
-          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0] || {};
-          var allSides = Array.isArray(s.sides) ? s.sides.map(function (x) { return x.id || x; }) : Object.keys(s.sides || {});
-          var sides = mode.value() === "lab" ? [groupSide.value] : allSides;
+          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0];
+          var sides = mode.value() === "lab" ? [groupSide.value] : scenarioSides(s).map(function (x) { return x.id; });
           var aiSettings = { autoRelease: autoRelease.checked, chat: chat.checked };
           api("POST", "/api/sessions", {
             scenarioId: scenarioSelect.value, condition: condition.value(), mode: mode.value(), sides: sides,
@@ -2094,59 +2234,50 @@
   }
 
   // Facilitator session payload accessors (GET /api/sessions/:id is the stored session plus
-  // scenario, sideInfo, links, counts, timer, now and, at the debrief, debrief).
+  // scenario, sideInfo, links, counts, timer, now and, at the debrief, debrief). The names are the
+  // server's (docs/decisions.md, "Integration reconciliations").
   var fshape = {
+    // codes.group = { side: code }. codes.observer = { side: code }; a session stored before the
+    // one-observer-code-per-side fix carries a single string, which the lab server's session.js
+    // (fullForFacilitator) also still reads.
     codes: function (s) {
       var codes = s.codes || {};
-      var groups = codes.group || codes.groups || codes.sides || {};
-      // Observer codes are one per group side ({ side: code }); an older session may carry a single string.
-      var observer = codes.observer && typeof codes.observer === "object" ? codes.observer : (codes.observer || s.observerCode ? { all: codes.observer || s.observerCode } : {});
-      var out = { sides: {}, observer: observer };
-      Object.keys(groups).forEach(function (k) { out.sides[k] = typeof groups[k] === "string" ? groups[k] : (groups[k].code || ""); });
-      Object.keys(codes).forEach(function (k) { if (k !== "observer" && k !== "groups" && k !== "sides" && typeof codes[k] === "string" && /^BLF-S/i.test(codes[k])) out.sides[k] = codes[k]; });
-      return out;
+      var observer = typeof codes.observer === "string" ? { all: codes.observer } : (codes.observer || {});
+      return { sides: Object.assign({}, codes.group || {}), observer: observer };
     },
-    // Every side of the scenario with kind, name, hasAI and axis; s.sides alone is the list of group side ids.
-    sides: function (s) {
-      if (s.sideInfo) return s.sideInfo;
-      var sides = s.sides || {};
-      if (Array.isArray(sides)) { var o = {}; sides.forEach(function (x) { o[x.id || x] = typeof x === "object" ? x : { kind: "group" }; }); return o; }
-      return sides;
-    },
-    sideName: function (s, side) { var sides = fshape.sides(s); return (sides[side] && sides[side].name) || (s.scenario && s.scenario.sides && s.scenario.sides[side] && s.scenario.sides[side].name) || side; },
-    scenarioLabel: function (s) { return (s.scenario && (s.scenario.title || s.scenario.shortTitle)) || s.scenarioId || ""; },
-    turn: function (s) { return turnOfStage(s.stage) || s.turn || null; },
+    // sideInfo: every side of the scenario, played or simulated, as { kind, name, hasAI, aiName, axis }.
+    sides: function (s) { return s.sideInfo || {}; },
+    sideName: function (s, side) { var info = fshape.sides(s)[side]; return (info && info.name) || side; },
+    scenarioLabel: function (s) { return (s.scenario && (s.scenario.title || s.scenario.shortTitle)) || ""; },
+    turn: function (s) { return turnOfStage(s.stage); },
     draft: function (s, side, turn) { return (s.drafts && s.drafts[side] && s.drafts[side][turn]) || {}; },
     assessments: function (s, side, turn) { return (s.assessments && s.assessments[side] && s.assessments[side][turn]) || {}; },
     submission: function (s, side, turn) { return (s.submissions && s.submissions[side] && s.submissions[side][turn]) || null; },
     ready: function (s, side) { return !!(s.ready && s.ready[side]); },
-    // The server counts per side ({ side: { consented, baseline, survey } }); the console shows totals and the split.
+    // counts = { side: { consented, baseline, survey } }; the console shows the totals and the split.
     counts: function (s) {
       var src = s.counts || {};
-      var totals = { consented: 0, baseline: 0, survey: 0, bySide: {} };
-      var perSide = false;
+      var totals = { consented: 0, baseline: 0, survey: 0, bySide: src };
       Object.keys(src).forEach(function (k) {
-        var v = src[k];
-        if (!v || typeof v !== "object") return;
-        perSide = true;
-        totals.bySide[k] = v;
-        ["consented", "baseline", "survey"].forEach(function (f) { totals[f] += Number(v[f]) || 0; });
+        ["consented", "baseline", "survey"].forEach(function (f) { totals[f] += Number(src[k] && src[k][f]) || 0; });
       });
-      return perSide ? totals : Object.assign(totals, src);
+      return totals;
     },
-    // Injects are stored per side ({ side: [{ t, turn, text }] }); the console lists them in time order.
+    // injects = { side: [{ t, turn, text }] }; the console lists them in time order.
     injects: function (s) {
-      var inj = s.injects || [];
-      if (Array.isArray(inj)) return inj;
+      var inj = s.injects || {};
       var out = [];
       Object.keys(inj).forEach(function (side) { (inj[side] || []).forEach(function (i) { out.push({ t: i.t, turn: i.turn, sides: [side], text: i.text }); }); });
       out.sort(function (a, b) { return String(a.t).localeCompare(String(b.t)); });
       return out;
     },
+    // branch = { suggested: { side: { cell, rule, detail, score } }, confirmed: { side: cell }, cells }.
     branch: function (s) { return s.branch || {}; },
-    assistant: function (s, side, turn) { return (s.assistant && s.assistant[side] && s.assistant[side][turn]) || (s.assistantThreads && s.assistantThreads[side] && s.assistantThreads[side][turn]) || []; },
-    provider: function (s) { return (s.ai && s.ai.provider) || s.provider || ""; },
-    links: function (s) { var l = s.links || {}; return { groups: l.group || l.groups || {}, participants: l.participants || l.survey || {}, observer: l.observer || "" }; }
+    // assistant = { side: { turn: [{ role, text, t }] } }.
+    assistant: function (s, side, turn) { return (s.assistant && s.assistant[side] && s.assistant[side][turn]) || []; },
+    provider: function (s) { return (s.ai && s.ai.provider) || ""; },
+    // links = { group: { side: url }, participants: { side: url }, observer: { side: url } }.
+    links: function (s) { var l = s.links || {}; return { groups: l.group || {}, participants: l.participants || {}, observer: l.observer || {} }; }
   };
 
   var STAGES = ["setup", "briefing", "turn1", "statements1", "turn2", "statements2", "survey", "debrief", "closed"];
@@ -2184,11 +2315,11 @@
       ]));
       return { parts: parts, built: {}, lastJson: {}, statuses: {} };
     });
-    setPoll(function () {
-      return api("GET", "/api/sessions/" + encodeURIComponent(id)).then(function (session) {
+    setPoll(function (signal) {
+      return api("GET", "/api/sessions/" + encodeURIComponent(id), undefined, { signal: signal }).then(function (session) {
         console_.session = session;
         var wantsAi = session.condition === "C" || session.mode === "lab";
-        var aiPromise = wantsAi ? api("GET", "/api/sessions/" + encodeURIComponent(id) + "/ai").catch(function () { return null; }) : Promise.resolve(null);
+        var aiPromise = wantsAi ? api("GET", "/api/sessions/" + encodeURIComponent(id) + "/ai", undefined, { signal: signal }).catch(function () { return null; }) : Promise.resolve(null);
         return aiPromise.then(function (ai) { console_.ai = ai; updateConsoleSession(ctx, session, ai); });
       });
     });
@@ -2240,8 +2371,8 @@
       sideKeys.forEach(function (side) {
         var code = codes.sides[side];
         if (!code) { node.appendChild(el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side)), el("p", { class: "muted" }, "Played by the simulated adversary.")])); return; }
-        var link = (links.groups && links.groups[side]) || (links[side]) || labLink(code, false);
-        var plink = (links.participants && links.participants[side]) || (s.survey && s.survey[side] && s.survey[side].url) || labLink(code, true);
+        var link = links.groups[side] || labLink(code, false);
+        var plink = links.participants[side] || labLink(code, true);
         node.appendChild(el("div", { class: "grid-2" }, [
           el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — group terminal"), el("div", { class: "code-value" }, code), UI.qrBlock(link, { label: "QR code for the " + fshape.sideName(s, side) + " terminal" })]),
           el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — participants' phones"), el("p", { class: "faint" }, "Same code; each person adds their table number."), UI.qrBlock(plink, { label: "QR code for " + fshape.sideName(s, side) + " participants" })])
@@ -2249,24 +2380,65 @@
       });
       Object.keys(codes.observer || {}).forEach(function (oside) {
         var ocode = codes.observer[oside];
-        var olink = (links.observer && typeof links.observer === "object" ? links.observer[oside] : links.observer) || labLink(ocode, false);
+        var olink = links.observer[oside] || labLink(ocode, false);
         var oname = oside === "all" ? "all sides" : fshape.sideName(s, oside);
         node.appendChild(el("div", { class: "code-block" }, [el("h3", null, "Observer — " + oname), el("p", { class: "faint" }, "For the observer sitting with this group; quick tags are recorded against this side."), el("div", { class: "code-value" }, ocode), UI.qrBlock(olink, { label: "QR code for the " + oname + " observer view" })]));
       });
     });
 
-    renderIfChanged(ctx, "stage", [s.stage, s.status, s.ready, fshape.counts(s), s.aiReview, s.adversaryReview, fshape.branch(s).confirmed], function (node) {
+    // What each side has done this turn, read from the facilitator payload (submissions, drafts,
+    // aiReview, adversaryReview and sideInfo). The advance guards refuse to leave a turn while a
+    // group's record, a condition-C output or the adversary's move is outstanding, so the card
+    // says where each side stands before the facilitator presses Advance.
+    function sideTurnState(side, tn) {
+      var info = sides[side] || {};
+      if (info.kind === "simulated") {
+        var adv = (s.adversaryReview && s.adversaryReview[tn]) || null;
+        if (!adv) return "move pending";
+        if (adv.status === "approved") return "move approved";
+        if (adv.status === "failed") return "generation failed";
+        return adv.generated ? "move generated, awaiting approval" : "move pending";
+      }
+      var sub = fshape.submission(s, side, tn);
+      var parts = [];
+      if (sub && sub.record) parts.push("decision submitted");
+      if (sub && sub.statement) parts.push("statement submitted");
+      if (!parts.length) {
+        var draft = fshape.draft(s, side, tn);
+        var drafted = Object.keys(draft).some(function (k) { var v = draft[k]; return v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length); });
+        parts.push(drafted ? "draft only" : "nothing yet");
+      }
+      var state = parts.join(", ");
+      if (s.condition === "C" && info.hasAI) {
+        var r = (s.aiReview && s.aiReview[side] && s.aiReview[side][tn]) || null;
+        if (r) state += " · output " + (r.status === "approved" ? "approved" : (r.status === "failed" ? "failed" : (r.status === "superseded" ? "superseded" : (r.generated ? "awaiting approval" : "generating"))));
+      }
+      return state;
+    }
+    var turnStates = (s.stage === "turn1" || s.stage === "turn2") && turn ? sideKeys.map(function (side) { return fshape.sideName(s, side) + ", Turn " + turn + ": " + sideTurnState(side, turn); }) : [];
+
+    renderIfChanged(ctx, "stage", [s.stage, s.status, s.ready, fshape.counts(s), s.aiReview, s.adversaryReview, fshape.branch(s).confirmed, turnStates], function (node) {
       var index = STAGES.indexOf(s.stage);
       var next = index >= 0 && index < STAGES.length - 1 ? STAGES[index + 1] : null;
       var prev = index > 0 ? STAGES[index - 1] : null;
       var status = partStatus(ctx, "stage");
       function go(to, force) {
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/advance", force ? { to: to, force: true } : { to: to }).then(function () { status.textContent = "Stage is now " + stageName(to) + "."; pollNow(); }, function (err) {
+        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/advance", force ? { to: to, force: true } : { to: to }).then(function () { status.textContent = "Stage is now " + stageName(to) + "."; pollNow(true); }, function (err) {
           status.textContent = "Could not change stage: " + err.message;
-          // A pending review (condition C output, or a simulated adversary move) blocks the advance; the override is logged.
-          if (!force && /not been approved/.test(err.message || "")) {
+          if (force) return;
+          // The server refuses to leave a turn while a group's decision record is missing
+          // (unsubmitted), a condition-C output is unapproved (review_pending) or the simulated
+          // adversary's move is unapproved (adversary_pending); force: true overrides and is logged
+          // on stage_advanced. A move that has not been generated yet gets no override: forcing past
+          // it would dead-end at the branch confirmation, which needs the approved Turn 1 move.
+          if (err.code === "adversary_pending" && /has not been generated/.test(err.message || "")) {
+            status.appendChild(el("span", null, " No override is offered here: use \"Generate the move now\" in the Adversary move section below, or wait for the group's statement, then approve the move."));
+            return;
+          }
+          if (err.code === "unsubmitted" || err.code === "review_pending" || err.code === "adversary_pending") {
+            var question = err.code === "unsubmitted" ? "Advance without that decision? The override is recorded on the session; the missing decision stays missing in the data and nothing is fabricated." : "Advance without that approval? The override is recorded on the session.";
             status.appendChild(el("span", null, " "));
-            status.appendChild(UI.confirmButton("Advance anyway (recorded as an override)", "Advance without that approval? The override is recorded on the session.", function () { go(to, true); }, { class: "btn-quiet" }));
+            status.appendChild(UI.confirmButton("Advance anyway (recorded as an override)", question, function () { go(to, true); }, { class: "btn-quiet" }));
           }
         });
       }
@@ -2275,10 +2447,11 @@
       var ready = sideKeys.map(function (side) { return el("li", null, fshape.sideName(s, side) + ": " + (sides[side] && sides[side].kind === "simulated" ? "simulated" : (fshape.ready(s, side) ? "ready" : "not ready"))); });
       var counts = fshape.counts(s);
       UI.append(node, [
-        s.consentStatus && !s.consentStatus.present ? el("div", { class: "notice is-error" }, "No consent text is configured on the server (lab-server/content/consent.json, or CONSENT_TEXT in its environment). Participants cannot record consent until it is supplied.") : el("span"),
+        s.consentStatus && !s.consentStatus.present ? el("div", { class: "notice is-error" }, "No consent text is configured on the lab server (its content/consent.json file, or CONSENT_TEXT in its environment). Participants cannot record consent until it is supplied.") : el("span"),
         el("p", null, ["Current stage: ", el("strong", null, stageName(s.stage))]),
         el("ul", { class: "bullets" }, ready),
-        el("p", { class: "muted" }, "Baseline answers received: " + (counts.baseline !== undefined ? counts.baseline : "—") + " · consent: " + (counts.consented !== undefined ? counts.consented : (counts.consent !== undefined ? counts.consent : "—"))),
+        turnStates.length ? el("ul", { class: "bullets turn-states" }, turnStates.map(function (t) { return el("li", null, t); })) : null,
+        el("p", { class: "muted" }, "Baseline answers received: " + counts.baseline + " · consent: " + counts.consented),
         (s.stage === "statements1" && !(fshape.branch(s).confirmed)) ? el("p", { class: "notice" }, "Confirm the branch below before advancing to Turn 2.") : null,
         el("div", { class: "actions" }, [back, advance]),
         status
@@ -2291,7 +2464,7 @@
       var extend = el("input", { type: "number", id: "timerExtend", min: "1", max: "60", value: "5" });
       var status = partStatus(ctx, "timer");
       function act(action, mins) {
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/timer", { action: action, minutes: mins }).then(function () { status.textContent = "Timer " + action + (action === "extend" ? "ed" : (action === "stop" ? "ped" : "ed")) + "."; pollNow(); }, function (err) { status.textContent = "Timer: " + err.message; });
+        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/timer", { action: action, minutes: mins }).then(function () { status.textContent = "Timer " + action + (action === "extend" ? "ed" : (action === "stop" ? "ped" : "ed")) + "."; pollNow(true); }, function (err) { status.textContent = "Timer: " + err.message; });
       }
       var start = el("button", { type: "button", class: "btn btn-primary" }, "Start"); start.addEventListener("click", function () { act("start", Number(minutes.value) || 15); });
       var stop = el("button", { type: "button", class: "btn btn-quiet" }, "Stop"); stop.addEventListener("click", function () { act("stop"); });
@@ -2319,44 +2492,51 @@
     });
 
     var injects = fshape.injects(s);
-    renderIfChanged(ctx, "inject", [sideKeys, injects.length], function (node) {
+    // Injects belong to an open turn: the server refuses one sent between turns (409 no_turn_open).
+    var turnOpen = s.stage === "turn1" || s.stage === "turn2";
+    renderIfChanged(ctx, "inject", [sideKeys, injects.length, turnOpen], function (node) {
       var text = el("textarea", { id: "injectText", rows: "3" });
       var boxes = sideKeys.map(function (side) { var b = el("input", { type: "checkbox", id: "inject-" + side, value: side, checked: true }); return { box: b, label: el("label", { class: "choice", for: b.id }, [b, el("span", null, fshape.sideName(s, side))]) }; });
       var status = partStatus(ctx, "inject");
       var send = UI.confirmButton("Send inject", "Send this inject to the selected sides?", function () {
         var targets = boxes.filter(function (b) { return b.box.checked; }).map(function (b) { return b.box.value; });
         if (!text.value.trim() || !targets.length) { status.textContent = "Write the inject and choose at least one side."; return; }
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/inject", { sides: targets, text: text.value.trim() }).then(function () { status.textContent = "Inject sent."; text.value = ""; pollNow(); }, function (err) { status.textContent = "Could not send: " + err.message; });
-      }, { class: "btn-primary" });
-      UI.append(node, [UI.field("Inject text (shown to the group as FACILITATOR INJECT)", text), el("fieldset", { class: "choices" }, [el("legend", null, "Send to")].concat(boxes.map(function (b) { return b.label; }))), el("div", { class: "actions" }, [send]), status]);
+        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/inject", { sides: targets, text: text.value.trim() }).then(function () { status.textContent = "Inject sent."; text.value = ""; pollNow(true); }, function (err) { status.textContent = "Could not send: " + err.message; });
+      }, { class: "btn-primary", disabled: !turnOpen });
+      UI.append(node, [
+        UI.field("Inject text (shown to the group as FACILITATOR INJECT)", text),
+        el("fieldset", { class: "choices" }, [el("legend", null, "Send to")].concat(boxes.map(function (b) { return b.label; }))),
+        el("div", { class: "actions" }, [send]),
+        turnOpen ? null : el("p", { class: "muted" }, "Injects can be sent while Turn 1 or Turn 2 is open."),
+        status
+      ]);
       if (injects.length) node.appendChild(el("div", null, [el("h3", null, "Sent"), UI.list(injects.map(function (i) { return (i.sides ? i.sides.map(function (k) { return fshape.sideName(s, k); }).join(", ") + ": " : "") + (i.text || ""); }))]));
     });
 
     renderIfChanged(ctx, "branch", [fshape.branch(s), s.stage, turn], function (node) {
       var b = fshape.branch(s);
-      var suggested = b.suggested || b.suggestion || null;
+      var suggested = b.suggested && Object.keys(b.suggested).length ? b.suggested : null;
       var confirmed = b.confirmed || null;
       if (!suggested && !confirmed) { node.appendChild(el("p", { class: "muted" }, "The branch suggestion appears once both sides have submitted Turn 1.")); return; }
       var selects = {};
       var status = partStatus(ctx, "branch");
       var rows = Object.keys(suggested || confirmed).map(function (side) {
         var sug = (suggested && suggested[side]) || {};
-        var cell = typeof sug === "string" ? sug : (sug.cell || "");
-        var rule = typeof sug === "object" ? [sug.rule, sug.detail].filter(Boolean).join(" \u2014 ") : "";
-        var axis = (sides[side] && sides[side].axis) || (b.axes && b.axes[side]) || (sug.axis) || [cell];
+        var cell = sug.cell || "";
+        var rule = [sug.rule, sug.detail].filter(Boolean).join(" \u2014 ");
+        var axis = (sides[side] && sides[side].axis) || [cell];
         var select = el("select", { id: "branch-" + side }, axis.map(function (c) { return el("option", { value: c, selected: c === ((confirmed && confirmed[side]) || cell) }, c); }));
         selects[side] = select;
         return el("div", { class: "card is-quiet" }, [
           el("h3", null, fshape.sideName(s, side)),
-          el("p", null, ["Suggested: ", el("strong", null, cell || "—")]),
+          el("p", null, ["Suggested: ", el("strong", null, cell || "\u2014")]),
           rule ? el("p", { class: "muted small" }, rule) : null,
-          UI.field("Cell to confirm", select),
-          sug.opening ? el("p", { class: "faint" }, "Opening: " + String(sug.opening).slice(0, 160)) : null
+          UI.field("Cell to confirm", select)
         ]);
       });
       var confirm = UI.confirmButton(confirmed ? "Re-confirm branch" : "Confirm branch", "Confirm these cells for Turn 2?", function () {
         var body = {}; Object.keys(selects).forEach(function (side) { body[side] = selects[side].value; });
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/branch", body).then(function () { status.textContent = "Branch confirmed."; pollNow(); }, function (err) { status.textContent = "Could not confirm: " + err.message; });
+        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/branch", body).then(function () { status.textContent = "Branch confirmed."; pollNow(true); }, function (err) { status.textContent = "Could not confirm: " + err.message; });
       }, { class: "btn-primary" });
       UI.append(node, [confirmed ? el("p", null, ["Confirmed: ", el("strong", null, Object.keys(confirmed).map(function (k) { return fshape.sideName(s, k) + " " + confirmed[k]; }).join(" · "))]) : null, el("div", { class: "grid-2" }, rows), el("div", { class: "actions" }, [confirm]), status]);
     });
@@ -2374,15 +2554,23 @@
       if (!any) node.appendChild(el("p", { class: "muted" }, "Generated assessments appear here when a turn is released."));
     });
 
-    renderIfChanged(ctx, "adversary", [ai && ai.adversary, s.mode], function (node) {
+    // Lab mode: the move for the open turn is generated once the human side's decision record and
+    // public statement are both in (or the turn is locked). With the record in but no statement,
+    // the facilitator may generate it now; the server logs that as trigger "facilitator".
+    var humanSide = sideKeys.filter(function (k) { return !(sides[k] && sides[k].kind === "simulated"); })[0] || null;
+    var humanSub = turn && humanSide ? fshape.submission(s, humanSide, turn) : null;
+    var humanRecordIn = !!(humanSub && humanSub.record);
+    renderIfChanged(ctx, "adversary", [ai && ai.adversary, s.mode, s.stage, humanRecordIn], function (node) {
       if (s.mode !== "lab") { node.appendChild(el("p", { class: "muted" }, "The simulated adversary is used in lab mode only.")); return; }
       var adv = (ai && ai.adversary) || {};
       var keys = Object.keys(adv);
-      if (!keys.length) { node.appendChild(el("p", { class: "muted" }, "The adversary's proposed move appears here after the group submits.")); return; }
       keys.forEach(function (tn) { node.appendChild(adversaryCard(ctx, id, s, tn, adv[tn])); });
+      var waiting = el("p", { class: "muted" }, "The adversary's proposed move appears here once the group has submitted its decision and public statement, or when you generate it.");
+      if (ai && (s.stage === "turn1" || s.stage === "turn2") && !adv[String(turn)]) node.appendChild(humanRecordIn ? generateNowCard(ctx, id, turn) : waiting);
+      else if (!keys.length) node.appendChild(waiting);
     });
 
-    renderIfChanged(ctx, "transcripts", [s.assistant, s.assistantThreads, turn], function (node) {
+    renderIfChanged(ctx, "transcripts", [s.assistant, turn], function (node) {
       var any = false;
       sideKeys.forEach(function (side) {
         [1, 2].forEach(function (tn) {
@@ -2390,7 +2578,7 @@
           if (!messages.length) return;
           any = true;
           node.appendChild(el("div", { class: "card" }, [el("h3", null, fshape.sideName(s, side) + " · Turn " + tn), el("div", { class: "transcript" }, messages.map(function (m) {
-            return el("div", { class: "msg " + (m.role === "user" ? "is-user" : "is-assistant") }, [el("span", { class: "msg-role" }, m.role === "user" ? "Group" : "Assistant"), UI.paras(m.text || m.content || "")]);
+            return el("div", { class: "msg " + (m.role === "user" ? "is-user" : "is-assistant") }, [el("span", { class: "msg-role" }, m.role === "user" ? "Group" : "Assistant"), UI.paras(m.text || "")]);
           }))]));
         });
       });
@@ -2421,8 +2609,8 @@
 
     renderIfChanged(ctx, "close", [s.status], function (node) {
       var status = partStatus(ctx, "close");
-      var close = UI.confirmButton("Close session", "Close this session? All group and observer codes stop working. Exports remain available.", function () {
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/close", {}).then(function () { status.textContent = "Session closed."; pollNow(); }, function (err) { status.textContent = "Could not close: " + err.message; });
+      var close = UI.confirmButton("Close session", "Close this session? All group and observer codes stop working; every terminal and phone will show 'This session has closed'. Tell the room first. Exports remain available.", function () {
+        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/close", {}).then(function () { status.textContent = "Session closed."; pollNow(true); }, function (err) { status.textContent = "Could not close: " + err.message; });
       }, { class: "btn-danger", disabled: s.status === "closed" });
       UI.append(node, [el("div", { class: "actions" }, [close]), status]);
     });
@@ -2434,70 +2622,213 @@
     });
   }
 
-  // AI review card: approve, edit inline, regenerate with a reason; shows the prompt materials.
+  // The server's comparison of the figures with the anchor (review.anchorDrift): a move beyond
+  // ten points on the confidence or any pathway, or a changed pathway set, is flagged and needs a
+  // logged reason to approve. Points are whole per cents.
+  function driftLine(drift) {
+    var points = Math.round((drift.maxAbsDelta || 0) * 100);
+    if (!drift.flagged) return el("p", { class: "muted small drift-line" }, "Within the anchor rule (largest move " + points + " points).");
+    var text = drift.countMatch && drift.labelsMatch ? "Outside the anchor rule: largest move " + points + " points." : "Pathways differ from the anchor" + (points > 10 ? "; largest move " + points + " points" : "") + ".";
+    return el("div", { class: "notice is-error drift-line" }, [el("span", { class: "badge is-red" }, "Anchor drift"), " " + text]);
+  }
+
+  // AI review card (condition C): approve, edit inline (text and figures), regenerate with a
+  // reason; shows the anchor the prompt carried, the drift from it and the prompt materials.
+  // Figures are edited as whole per cents and sent as fractions 0 to 1; the pathway labels,
+  // order and windows stay read-only because the anchor rule requires them unchanged. A 409
+  // anchor_drift on Approve reveals the override reason, which is logged with the approval.
   function aiReviewCard(ctx, id, s, side, tn, item) {
     item = item || {};
     var status = item.status || "pending";
     var outputs = item.outputs || {};
-    var card = el("div", { class: "card" + (status === "pending" ? " is-flag" : "") });
+    var failed = status === "failed";
+    var card = el("div", { class: "card" + (status === "pending" ? " is-flag" : "") + (failed ? " is-alert" : "") });
     var note = partStatus(ctx, "ai:" + side + ":" + tn);
-    UI.append(card, [el("div", { class: "card-title" }, [el("h3", null, fshape.sideName(s, side) + " · Turn " + tn), el("span", { class: "badge " + (status === "approved" ? "is-green" : (status === "pending" ? "is-amber" : "")) }, status)])]);
-    if (status === "generating" || (status === "pending" && !Object.keys(outputs).length)) { card.appendChild(el("p", null, "Generating. This panel refreshes on its own.")); return card; }
-    if (status === "failed" || item.error) card.appendChild(el("div", { class: "notice is-error" }, "Generation failed: " + ((item.error && item.error.message) || item.error || "unknown error") + ". Regenerate, or the group will wait."));
-    var edits = {};
+    var route = "/api/sessions/" + encodeURIComponent(id) + "/ai/" + side + "/" + tn;
+    UI.append(card, [el("div", { class: "card-title" }, [el("h3", null, fshape.sideName(s, side) + " · Turn " + tn + (item.cell ? " · " + item.cell : "")), el("span", { class: "badge " + (status === "approved" ? "is-green" : (status === "pending" ? "is-amber" : (failed ? "is-red" : ""))) }, status)])]);
+    if (status === "superseded") {
+      card.appendChild(el("p", { class: "muted" }, "Superseded: the branch was changed after this output was generated" + (item.cell ? " for cell " + item.cell : "") + ". A fresh output is generated when Turn 2 is released; there is nothing to do here."));
+      return card;
+    }
+    var reason = el("input", { type: "text", id: "ai-reason-" + side + "-" + tn });
+    var regenerate = UI.confirmButton("Regenerate", "Regenerate with the reason given? The reason is logged.", function () {
+      if (!reason.value.trim()) { note.textContent = "Give a reason for regenerating."; return; }
+      api("POST", route + "/regenerate", { reason: reason.value.trim() }).then(function () { note.textContent = "Regenerating."; pollNow(true); }, function (err) { note.textContent = "Could not regenerate: " + err.message; });
+    });
+    var materials = item.materials ? el("details", null, [el("summary", null, "Prompt materials used"), el("div", { class: "details-body" }, renderAny(item.materials))]) : null;
+    if (failed) {
+      // Nothing to approve: the group waits until a regeneration succeeds.
+      card.appendChild(el("div", { class: "notice is-error" }, "Generation failed" + (item.error && item.error.code ? " (" + item.error.code + ")" : "") + ": " + ((item.error && item.error.message) || "unknown error") + ". Regenerate, or the group will wait."));
+      UI.append(card, [el("div", { class: "grid-2" }, [UI.field("Reason for regenerating", reason), el("div", { class: "actions" }, [regenerate])]), note, materials]);
+      return card;
+    }
+    if (!item.generated || !Object.keys(outputs).length) { card.appendChild(el("p", null, "Generating. This panel refreshes on its own.")); return card; }
+    var anchor = item.anchor || null;
+    if (anchor) card.appendChild(el("p", { class: "faint anchor-line" }, "Anchor: confidence " + percent(anchor.confidence) + "%" + ((anchor.pathways || []).length ? "; " + anchor.pathways.map(function (p) { return p.label + " " + percent(p.probability) + "%"; }).join(", ") : "")));
+    if (item.anchorDrift) card.appendChild(driftLine(item.anchorDrift));
+    // The editable figures as whole per cents; pctOf is null when a field holds nothing usable.
+    function pctInput(suffix, value) {
+      var input = el("input", { type: "number", min: "0", max: "100", step: "1", inputmode: "numeric", class: "pct-input", id: "ai-" + side + "-" + tn + "-" + suffix });
+      input.value = percent(value) === null ? "" : String(percent(value));
+      return input;
+    }
+    function pctOf(input) {
+      var v = input.value.trim();
+      var n = Number(v);
+      return v === "" || !isFinite(n) || n < 0 || n > 100 || n !== Math.round(n) ? null : n;
+    }
     var fields = [];
+    var confidenceInput = null;
+    var pathwayInputs = [];
     ["intel", "forecast", "adversary"].forEach(function (role) {
       var out = outputs[role] || {};
       var headline = el("textarea", { id: "ai-" + side + "-" + tn + "-" + role + "-headline", rows: "2" }); headline.value = out.headline || "";
       var body = el("textarea", { id: "ai-" + side + "-" + tn + "-" + role + "-body", rows: "5" }); body.value = out.body || "";
-      var reasoning = el("textarea", { id: "ai-" + side + "-" + tn + "-" + role + "-reasoning", rows: "3" }); reasoning.value = (outputs.reasoning && outputs.reasoning[role]) || out.reasoning || "";
+      var reasoning = el("textarea", { id: "ai-" + side + "-" + tn + "-" + role + "-reasoning", rows: "3" }); reasoning.value = (outputs.reasoning && outputs.reasoning[role]) || "";
       fields.push({ role: role, headline: headline, body: body, reasoning: reasoning, original: out });
-      var extra = [];
-      if (out.confidence !== undefined) extra.push("confidence " + percent(out.confidence) + "%");
-      if (out.pathways) extra.push(out.pathways.map(function (p) { return p.label + " " + percent(p.probability) + "% (" + (p.window || "") + ")"; }).join("; "));
+      var figures = [];
+      if (role === "intel") {
+        confidenceInput = pctInput("confidence", out.confidence);
+        figures.push(UI.field("Confidence (%)", confidenceInput, { help: anchor ? "Anchor: " + percent(anchor.confidence) + "%" : null }));
+      }
+      if (role === "forecast" && out.pathways && out.pathways.length) {
+        var rows = out.pathways.map(function (p, i) {
+          var input = pctInput("pathway-" + i, p.probability);
+          var a = anchor && anchor.pathways && anchor.pathways[i];
+          pathwayInputs.push({ input: input, original: p });
+          return el("div", { class: "pathway-edit" }, [
+            el("label", { for: input.id }, [p.label || "", el("span", { class: "faint" }, (p.window ? " · " + p.window : "") + (a ? " · anchor " + percent(a.probability) + "%" : ""))]),
+            input
+          ]);
+        });
+        figures.push(el("div", { class: "pathway-edits" }, [el("div", { class: "label" }, "Pathway probabilities (%). Labels, order and windows follow the anchor and are not edited here.")].concat(rows)));
+      }
       card.appendChild(el("div", { class: "inline-edit screen" }, [
         el("h3", null, role === "intel" ? "Intelligence assessment" : (role === "forecast" ? "Escalation forecast" : "Adversary simulation")),
-        extra.length ? el("p", { class: "faint" }, extra.join(" · ")) : null,
-        UI.field("Headline", headline), UI.field("Body", body), UI.field("Reasoning", reasoning)
-      ]));
+        UI.field("Headline", headline), UI.field("Body", body)
+      ].concat(figures, [UI.field("Reasoning", reasoning)])));
     });
+    var allInputs = fields.reduce(function (acc, f) { return acc.concat([f.headline, f.body, f.reasoning]); }, []).concat(confidenceInput ? [confidenceInput] : [], pathwayInputs.map(function (p) { return p.input; }));
+    // The outputs as edited on screen, or an error when a figure is unusable. A figure is written
+    // into the outputs only when it changed, so an untouched figure keeps its exact value.
+    function collect() {
+      var edited = JSON.parse(JSON.stringify(outputs));
+      var changed = false, error = null;
+      fields.forEach(function (f) {
+        edited[f.role] = Object.assign({}, edited[f.role] || {}, { headline: f.headline.value, body: f.body.value });
+        edited.reasoning = edited.reasoning || {};
+        edited.reasoning[f.role] = f.reasoning.value;
+        if (f.headline.value !== (f.original.headline || "") || f.body.value !== (f.original.body || "") || f.reasoning.value !== ((outputs.reasoning && outputs.reasoning[f.role]) || "")) changed = true;
+      });
+      if (confidenceInput) {
+        var c = pctOf(confidenceInput);
+        if (c === null) error = "Every figure needs a whole number from 0 to 100.";
+        else if (c !== percent(outputs.intel && outputs.intel.confidence)) { changed = true; edited.intel.confidence = c / 100; }
+      }
+      pathwayInputs.forEach(function (p, i) {
+        var v = pctOf(p.input);
+        if (v === null) error = "Every figure needs a whole number from 0 to 100.";
+        else if (v !== percent(p.original.probability)) { changed = true; edited.forecast.pathways[i].probability = v / 100; }
+      });
+      return { outputs: edited, changed: changed, error: error };
+    }
+    var overrideReason = el("input", { type: "text", id: "ai-override-" + side + "-" + tn });
+    var overrideBlock = el("div", { class: "card is-alert" });
+    overrideBlock.hidden = true;
+    function send(body, done) {
+      api("POST", route + "/approve", body).then(function () { note.textContent = done; pollNow(true); }, function (err) {
+        note.textContent = "Could not approve: " + err.message;
+        // Figures outside the anchor rule: the facilitator may still release them with a logged reason.
+        if (err.code === "anchor_drift") { overrideBlock.hidden = false; overrideReason.focus(); }
+      });
+    }
     if (status !== "approved") {
       var approve = UI.confirmButton("Approve", "Approve these outputs for the group? Any edits are logged.", function () {
-        var edited = JSON.parse(JSON.stringify(outputs));
-        var changed = false;
-        fields.forEach(function (f) {
-          edited[f.role] = Object.assign({}, edited[f.role] || {}, { headline: f.headline.value, body: f.body.value });
-          edited.reasoning = edited.reasoning || {};
-          edited.reasoning[f.role] = f.reasoning.value;
-          if (f.headline.value !== (f.original.headline || "") || f.body.value !== (f.original.body || "") || f.reasoning.value !== ((outputs.reasoning && outputs.reasoning[f.role]) || f.original.reasoning || "")) changed = true;
-        });
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/ai/" + side + "/" + tn + "/approve", changed ? { outputs: edited } : {}).then(function () { note.textContent = changed ? "Approved with edits." : "Approved."; pollNow(); }, function (err) { note.textContent = "Could not approve: " + err.message; });
+        var c = collect();
+        if (c.error) { note.textContent = c.error; return; }
+        send(c.changed ? { outputs: c.outputs } : {}, c.changed ? "Approved with edits." : "Approved.");
       }, { class: "btn-primary" });
-      var reason = el("input", { type: "text", id: "ai-reason-" + side + "-" + tn, placeholder: "" });
-      var regenerate = UI.confirmButton("Regenerate", "Regenerate with the reason given? The reason is logged.", function () {
-        if (!reason.value.trim()) { note.textContent = "Give a reason for regenerating."; return; }
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/ai/" + side + "/" + tn + "/regenerate", { reason: reason.value.trim() }).then(function () { note.textContent = "Regenerating."; pollNow(); }, function (err) { note.textContent = "Could not regenerate: " + err.message; });
-      });
+      var approveWithReason = UI.confirmButton("Approve with this reason", "Approve these figures outside the anchor rule? The reason is logged with the approval.", function () {
+        var why = overrideReason.value.trim();
+        if (!why) { note.textContent = "Give a reason for the override."; return; }
+        var c = collect();
+        if (c.error) { note.textContent = c.error; return; }
+        send(c.changed ? { outputs: c.outputs, overrideReason: why } : { overrideReason: why }, (c.changed ? "Approved with edits" : "Approved") + " (override reason logged).");
+      }, { class: "btn-primary" });
+      UI.append(overrideBlock, [
+        el("p", null, "These figures are outside the anchor rule. To release them as they stand, give the reason; it is logged with the approval. Or edit the figures back to within ten points of the anchor and approve again."),
+        el("div", { class: "grid-2" }, [UI.field("Override reason", overrideReason), el("div", { class: "actions" }, [approveWithReason])])
+      ]);
       card.appendChild(el("div", { class: "grid-2" }, [UI.field("Reason for regenerating", reason), el("div", { class: "actions" }, [approve, regenerate])]));
+      card.appendChild(overrideBlock);
     } else {
-      fields.forEach(function (f) { f.headline.disabled = true; f.body.disabled = true; f.reasoning.disabled = true; });
+      allInputs.forEach(function (control) { control.disabled = true; });
       if (item.edited) card.appendChild(el("p", { class: "diff-note" }, "Approved with facilitator edits (diff logged)."));
+      if (item.driftOverrideReason) card.appendChild(el("p", { class: "diff-note" }, "Approved outside the anchor rule. Reason given: " + item.driftOverrideReason));
     }
     card.appendChild(note);
-    if (item.materials) card.appendChild(el("details", null, [el("summary", null, "Prompt materials used"), el("div", { class: "details-body" }, renderAny(item.materials))]));
+    if (materials) card.appendChild(materials);
     if (item.usage) card.appendChild(el("p", { class: "faint mono" }, "Usage: " + JSON.stringify(item.usage) + (item.model ? " · " + item.model : "") + (item.provider ? " · " + item.provider : "")));
     return card;
   }
 
-  // Adversary move card (lab mode): approve, edit, regenerate.
+  // What started an adversary generation (review.trigger) and what arrived after it
+  // (review.materialsStale.reason), as the console words them.
+  var ADVERSARY_TRIGGERS = {
+    decision_submitted: "the group's decision was submitted",
+    statement_submitted: "the group's public statement was submitted",
+    locked: "the turn was locked at the time limit",
+    facilitator: "generated by the facilitator before the public statement arrived",
+    regenerate: "regenerated by the facilitator",
+    submission: "the group's submission"
+  };
+  var STALE_REASONS = { hotline_sent: "a hotline message", statement_submitted: "the public statement", decision_submitted: "the decision record", locked: "the locked turn's record" };
+
+  // Lab mode, with the group's decision record in but no public statement yet: the facilitator
+  // may have the move generated now instead of waiting. The server treats a regenerate with no
+  // existing move as a first generation (trigger "facilitator"), the prompt says that no statement
+  // has been received yet, and a statement arriving later marks the move stale rather than
+  // regenerating it unbidden.
+  function generateNowCard(ctx, id, tn) {
+    var note = partStatus(ctx, "adversary:generate:" + tn);
+    var generate = UI.confirmButton("Generate the move now", "Generate the adversary's Turn " + tn + " move from the group's decision alone? The group's public statement has not arrived; one that arrives later is flagged on the move, not fed to it unbidden.", function () {
+      generate.setDisabled(true);
+      api("POST", "/api/sessions/" + encodeURIComponent(id) + "/adversary/" + tn + "/regenerate", { reason: "Generated by the facilitator before the public statement arrived" }).then(function () { note.textContent = "Generating the adversary's Turn " + tn + " move."; pollNow(true); }, function (err) { note.textContent = "Could not generate: " + err.message; generate.setDisabled(false); });
+    }, { class: "btn-primary" });
+    return el("div", { class: "card is-flag" }, [
+      el("h3", null, "Turn " + tn),
+      el("p", null, "The group has submitted its decision but not yet its public statement. The adversary's move is generated when the statement arrives or the turn is locked; you can generate it now instead."),
+      el("div", { class: "actions" }, [generate]),
+      note
+    ]);
+  }
+
+  // Adversary move card (lab mode): approve, edit, regenerate; shows what triggered the
+  // generation and whether material from the group arrived after it.
   function adversaryCard(ctx, id, s, tn, item) {
     item = item || {};
     var status = item.status || "pending";
     var move = item.move || {};
-    var card = el("div", { class: "card" + (status === "pending" ? " is-flag" : "") });
+    var failed = status === "failed";
+    var card = el("div", { class: "card" + (status === "pending" ? " is-flag" : "") + (failed ? " is-alert" : "") });
     var note = partStatus(ctx, "adversary:" + tn);
-    UI.append(card, [el("div", { class: "card-title" }, [el("h3", null, "Turn " + tn), el("span", { class: "badge " + (status === "approved" ? "is-green" : "is-amber") }, status)])]);
-    if (status === "generating" || (status === "pending" && !Object.keys(move).length)) { card.appendChild(el("p", null, "Generating the adversary's move.")); return card; }
+    var route = "/api/sessions/" + encodeURIComponent(id) + "/adversary/" + tn;
+    UI.append(card, [el("div", { class: "card-title" }, [el("h3", null, "Turn " + tn), el("span", { class: "badge " + (status === "approved" ? "is-green" : (failed ? "is-red" : "is-amber")) }, status)])]);
+    if (item.trigger) card.appendChild(el("p", { class: "faint" }, "Trigger: " + (ADVERSARY_TRIGGERS[item.trigger] || item.trigger) + " (" + item.trigger + ")"));
+    var reason = el("input", { type: "text", id: "adv-reason-" + tn });
+    var regenerate = UI.confirmButton("Regenerate", "Regenerate the move with the reason given?", function () {
+      if (!reason.value.trim()) { note.textContent = "Give a reason for regenerating."; return; }
+      api("POST", route + "/regenerate", { reason: reason.value.trim() }).then(function () { note.textContent = "Regenerating."; pollNow(true); }, function (err) { note.textContent = "Could not regenerate: " + err.message; });
+    });
+    if (failed) {
+      // Nothing to approve: the turn cannot advance until a regeneration succeeds and is approved.
+      card.appendChild(el("div", { class: "notice is-error" }, "Generation failed" + (item.error && item.error.code ? " (" + item.error.code + ")" : "") + ": " + ((item.error && item.error.message) || "unknown error") + ". Regenerate to try again; the turn cannot advance until a move is approved."));
+      UI.append(card, [el("div", { class: "grid-2" }, [UI.field("Reason for regenerating", reason), el("div", { class: "actions" }, [regenerate])]), note]);
+      return card;
+    }
+    if (!item.generated || !Object.keys(move).length) { card.appendChild(el("p", null, "Generating the adversary's move.")); return card; }
+    var staleWhat = item.materialsStale ? (STALE_REASONS[item.materialsStale.reason] || item.materialsStale.reason) : null;
+    if (staleWhat && status !== "approved") card.appendChild(el("div", { class: "notice" }, "A message from the group (" + staleWhat + ") arrived after this move was generated. Regenerate so the move takes it into account, or approve knowing the move did not see it."));
     var controls = {};
     var leverGrid = el("div", { class: "grid-2" });
     LEVER_IDS.forEach(function (lid) {
@@ -2520,21 +2851,234 @@
         var changed = false;
         Object.keys(controls).forEach(function (k) { if (controls[k].value !== (move[k] || "")) changed = true; edited[k] = controls[k].value; });
         Object.keys(textFields).forEach(function (k) { if (textFields[k].value !== (move[k] || "")) changed = true; edited[k] = textFields[k].value; });
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/adversary/" + tn + "/approve", changed ? { move: edited } : {}).then(function () { note.textContent = "Move approved."; pollNow(); }, function (err) { note.textContent = "Could not approve: " + err.message; });
+        api("POST", route + "/approve", changed ? { move: edited } : {}).then(function () { note.textContent = "Move approved."; pollNow(true); }, function (err) { note.textContent = "Could not approve: " + err.message; });
       }, { class: "btn-primary" });
-      var reason = el("input", { type: "text", id: "adv-reason-" + tn });
-      var regenerate = UI.confirmButton("Regenerate", "Regenerate the move with the reason given?", function () {
-        if (!reason.value.trim()) { note.textContent = "Give a reason for regenerating."; return; }
-        api("POST", "/api/sessions/" + encodeURIComponent(id) + "/adversary/" + tn + "/regenerate", { reason: reason.value.trim() }).then(function () { note.textContent = "Regenerating."; pollNow(); }, function (err) { note.textContent = "Could not regenerate: " + err.message; });
-      });
       card.appendChild(el("div", { class: "grid-2" }, [UI.field("Reason for regenerating", reason), el("div", { class: "actions" }, [approve, regenerate])]));
     } else {
       Object.keys(controls).forEach(function (k) { controls[k].disabled = true; });
       Object.keys(textFields).forEach(function (k) { textFields[k].disabled = true; });
+      if (item.edited) card.appendChild(el("p", { class: "diff-note" }, "Approved with facilitator edits (diff logged)."));
+      if (staleWhat) card.appendChild(el("p", { class: "diff-note" }, "Approved as it stood: a message from the group (" + staleWhat + ") had arrived after generation and was not seen by the move (logged as stale)."));
     }
     card.appendChild(note);
     return card;
   }
+
+  // 8.1 Content preview and paper pack.
+  // GET /api/scenarios/:id/full?condition=A|B is the scenario resolved with the control variants
+  // (A) or the ai variants (B and C), plus levers, the list of pairs and the expected cells. The
+  // page renders two things. The participant pack for one side is built with the terminal's own
+  // components (briefingView, situationView, panelView) so that a paper session reads exactly what
+  // the screen would have shown for the chosen condition, laid out as the run sheet's pack: the
+  // briefing, then per turn and per Turn 2 cell a situation sheet with the initial-assessment form,
+  // the panel sheet, and the decision sheet, each on its own page so envelopes can be sealed by
+  // cell. It never carries sides[*].aiName, hasAI, provenance, facilitator, pairs, plenary,
+  // branching, observables, cells or debrief.reveal. The facilitator sheet holds all of that and
+  // has its own print action; it is excluded from the participant print by the data-print
+  // attribute on <main> (lab.css, @media print).
+  var ROLE_TITLES = {
+    ai: { intel: "Intelligence assessment", forecast: "Escalation forecast", adversary: "Adversary simulation" },
+    control: { intel: "assessment", forecast: "escalation forecast", adversary: "adversary estimate" }
+  };
+  var PANEL_ROLES = ["intel", "forecast", "adversary"];
+
+  // The scripted panel labelled as the server labels it for a group (the lab server's content.js,
+  // panelLabels): staff names in the control variant and for a side without a system, else the system name.
+  function previewPanel(full, side, scripted) {
+    var s = full.sides[side] || {};
+    if (!s.hasAI || !scripted) return null;
+    var control = full.variant === "control";
+    var titles = control ? ROLE_TITLES.control : ROLE_TITLES.ai;
+    var labels = {};
+    PANEL_ROLES.forEach(function (role) {
+      labels[role] = { name: control ? ((s.staffNames && s.staffNames[role]) || s.controlName || s.name) : s.aiName, title: titles[role] };
+    });
+    return { labels: labels, intel: scripted.intel, forecast: scripted.forecast, adversary: scripted.adversary };
+  }
+
+  // A group payload stand-in, so the terminal's components render the preview for one side.
+  function previewMe(full, side) {
+    var s = full.sides[side] || {};
+    var names = {};
+    Object.keys(full.sides || {}).forEach(function (k) { names[k] = { name: full.sides[k].name }; });
+    return {
+      session: { id: "preview" },
+      side: side,
+      content: {
+        scenario: { id: full.id, title: full.title, shortTitle: full.shortTitle },
+        side: { id: side, name: s.name, adversary: s.adversary, adversaryName: (full.sides[s.adversary] || {}).name || null },
+        sides: names,
+        background: full.background || {},
+        brief: (full.briefs && full.briefs[side]) || {},
+        levers: full.levers || null,
+        riskReduction: full.riskReduction || []
+      }
+    };
+  }
+
+  // Paper form pieces: a tick box, writing lines, a scale.
+  function paperBox(label) { return el("span", { class: "paper-choice" }, [el("span", { class: "paper-box", "aria-hidden": "true" }), label]); }
+  function paperLines(n) { var wrap = el("div", { class: "paper-lines" }); for (var i = 0; i < n; i++) wrap.appendChild(el("div", { class: "paper-line" })); return wrap; }
+  function paperChoices(labelText, options) { return el("div", { class: "field" }, [el("div", { class: "label" }, labelText), el("div", { class: "paper-choices" }, options.map(function (o) { return paperBox(o.label); }))]); }
+  function paperPercent(labelText) { return el("div", { class: "field" }, [el("div", { class: "label" }, labelText), el("div", { class: "paper-scale" }, "0 to 100: ______ %")]); }
+
+  function paperAssessment(defs, title, intro) {
+    var a = defs.assessment;
+    return el("div", { class: "card paper-form" }, [
+      el("h3", null, title),
+      intro ? el("p", { class: "muted" }, intro) : null,
+      paperChoices(a.intent.text, a.intent.options || []),
+      paperPercent(a.probability.text),
+      paperPercent(a.confidence.text)
+    ]);
+  }
+
+  function paperDecision(defs) {
+    var d = defs.decision;
+    function text(key, lines) { var def = d[key] || {}; return el("div", { class: "field" }, [el("div", { class: "label" }, (def.label || key) + (def.maxWords ? " (up to " + def.maxWords + " words)" : "")), paperLines(lines)]); }
+    return el("div", { class: "card paper-form" }, [
+      el("h3", null, "Decision"),
+      text("assessment", 3),
+      el("h3", null, "Levers"),
+      el("div", { class: "paper-levers" }, defs.levers.map(function (lever) {
+        return el("div", { class: "lever" }, [
+          el("div", { class: "lever-head" }, [el("span", { class: "label" }, lever.label || lever.id), lever.description ? el("span", { class: "lever-desc" }, lever.description) : null]),
+          el("div", { class: "paper-choices" }, (lever.options || THREE_WAY).map(function (o) { return paperBox(o.label); }))
+        ]);
+      })),
+      text("recommendation", 3), text("assumption", 2), text("risk", 2),
+      paperChoices(d.ai_disposition.label, d.ai_disposition.options || []),
+      paperChoices(d.tools_proposed.label, d.tools_proposed.options || []),
+      paperChoices(d.nuclear_influence.label, d.nuclear_influence.options || []),
+      paperPercent(d.recommendation_confidence.label),
+      el("h3", null, "Public statement"),
+      text("statement", 5),
+      el("p", { class: "muted small" }, "Hand the completed sheet to the facilitator; write the time on it when you finish.")
+    ]);
+  }
+
+  // The survey instruments on paper, when the preview carries them (full.survey = { scales, baseline, post, written }).
+  function paperSurvey(items, scales, offerNa) {
+    var sc = (scales && scales.likert5) || { min: 1, max: 5, minLabel: "Strongly disagree", maxLabel: "Strongly agree" };
+    return el("div", { class: "card paper-form" }, (items || []).map(function (item) {
+      var scale = item.scale || "likert5";
+      var label = item.text + (item.required === false ? " (optional)" : "");
+      if (scale === "likert5" || scale === "choice") {
+        var options = [];
+        if (scale === "choice" && item.options) options = item.options.map(function (o) { return typeof o === "string" ? { label: o } : o; });
+        else for (var v = sc.min || 1; v <= (sc.max || 5); v++) options.push({ label: String(v) });
+        if (item.na && offerNa) options.push({ label: "Not applicable" });
+        return paperChoices(label, options);
+      }
+      if (scale === "percent") return paperPercent(label);
+      return el("div", { class: "field" }, [el("div", { class: "label" }, label + (item.words ? " (about " + item.words + " words)" : "")), paperLines(5)]);
+    }));
+  }
+
+  function participantPack(full, side) {
+    var me = previewMe(full, side);
+    var defs = leverDefs(me);
+    var sideName = (full.sides[side] || {}).name || side;
+    var title = full.shortTitle || full.title || "";
+    var pack = el("div", { class: "preview-pack" });
+    function page(kickerText, heading, children) {
+      return el("section", { class: "print-page screen" }, [el("p", { class: "kicker" }, kickerText), el("h2", null, heading)].concat(children));
+    }
+    function turnPages(turn, t, panel, envelope) {
+      var k = title + " · " + sideName + " · Turn " + turn;
+      var sealed = envelope ? el("p", { class: "paper-envelope" }, "Envelope " + envelope + ". Facilitator: hand out for this cell only.") : null;
+      pack.appendChild(page(k, "Turn " + turn + ": " + (t.opening ? "What has happened" : "Indicators"), [sealed, situationView(t), paperAssessment(defs, defs.assessment.initialTitle, "Record the group's view before the assessment is opened. All three answers are needed.")]));
+      var panelSheet = [sealed ? sealed.cloneNode(true) : null];
+      if (panel) panelSheet.push(panelView(me, turn, panel));
+      if (!panel) panelSheet.push(el("div", { class: "card" }, [el("h3", null, "Analysts' note"), UI.paras(t.analysts || "No assessment is available to your side this turn.")]));
+      else if (t.analysts) panelSheet.push(el("div", { class: "card is-quiet" }, [el("h3", null, "Analysts' note"), UI.paras(t.analysts)]));
+      panelSheet.push(el("p", { class: "muted small" }, "Open this sheet only after the initial assessment has been written down; the facilitator notes the time it was opened."));
+      pack.appendChild(page(k, "Turn " + turn + ": Assessment", panelSheet));
+      pack.appendChild(page(k, "Turn " + turn + ": Decision", [sealed ? sealed.cloneNode(true) : null, paperAssessment(defs, defs.assessment.updatedTitle, defs.assessment.updatedIntro), paperDecision(defs)]));
+    }
+    var briefingKicker = title + " · " + sideName;
+    pack.appendChild(page(briefingKicker, "Briefing", [el("p", { class: "lede" }, "You are " + sideName + "."), briefingView(me)]));
+    if (full.survey && full.survey.baseline && full.survey.baseline.length) {
+      pack.appendChild(page(briefingKicker + " · Participant ____", "A few questions before we begin", [paperSurvey(full.survey.baseline, full.survey.scales, false)]));
+    }
+    var t1 = (full.turns && full.turns["1"] && full.turns["1"][side]) || {};
+    turnPages(1, t1, previewPanel(full, side, t1.panel), null);
+    var t2 = (full.turns && full.turns["2"] && full.turns["2"][side]) || {};
+    Object.keys(t2.openings || {}).forEach(function (cell) {
+      var t = { opening: t2.openings[cell] || [], common: t2.common || [], indicators: t2.indicators, dilemma: t2.dilemma, questions: t2.questions, analysts: t2.analysts };
+      turnPages(2, t, previewPanel(full, side, t2.panel && t2.panel[cell]), "Turn 2 · " + cell);
+    });
+    if (full.survey && ((full.survey.post && full.survey.post.length) || (full.survey.written && full.survey.written.length))) {
+      var offerNa = full.variant === "control" || !(full.sides[side] || {}).hasAI;
+      var instruction = (full.survey.scales && full.survey.scales.likert5 && full.survey.scales.likert5.instruction) || "Rate from 1 (Strongly Disagree) to 5 (Strongly Agree)";
+      pack.appendChild(page(briefingKicker + " · Participant ____", "Survey", [el("p", { class: "lede" }, instruction.replace(/\.?$/, ".")), paperSurvey(full.survey.post, full.survey.scales, offerNa), paperSurvey(full.survey.written, full.survey.scales, false)]));
+    }
+    return pack;
+  }
+
+  // Everything a participant must not see, for the facilitator's own print.
+  function facilitatorSheet(full) {
+    var wrap = el("div", { class: "preview-facilitator screen" });
+    function section(title, node) { if (!node) return; wrap.appendChild(el("h3", null, title)); wrap.appendChild(node); }
+    wrap.appendChild(el("h2", { class: "section-head" }, "Facilitator only"));
+    wrap.appendChild(el("p", { class: "notice" }, "Nothing below is shown to a group or printed in the participant pack."));
+    var sides = el("dl", { class: "pairs" });
+    Object.keys(full.sides || {}).forEach(function (k) {
+      var s = full.sides[k];
+      var staff = s.staffNames ? PANEL_ROLES.map(function (r) { return r + ": " + (s.staffNames[r] || "—"); }).join("; ") : "none";
+      UI.append(sides, [el("dt", null, s.name || k), el("dd", null, (s.hasAI ? "System " + (s.aiName || "") + "; control name " + (s.controlName || "—") + "; staff " + staff : "No system") + "; adversary " + ((full.sides[s.adversary] || {}).name || s.adversary || "—"))]);
+    });
+    section("Sides", el("div", { class: "card" }, sides));
+    if (full.provenance) section("Provenance", el("div", { class: "card" }, UI.paras(full.provenance)));
+    var fac = full.facilitator || {};
+    if (fac.groundTruth) section("Ground truth", el("div", { class: "card prose" }, UI.list(fac.groundTruth, false, "plain")));
+    if (fac.notes) section("Facilitator notes", el("div", { class: "card prose" }, UI.list(fac.notes, false, "plain")));
+    if (fac.matrix) section("Matrix", el("div", { class: "card" }, renderAny(fac.matrix)));
+    if (fac.givenAway) section("Lines moved from the participant text", el("div", { class: "card prose" }, UI.list(fac.givenAway, false, "plain")));
+    // Material a group receives on request only: verification results and red-team notes, per turn and cell.
+    var onRequest = el("div", { class: "screen" });
+    Object.keys(full.sides || {}).forEach(function (side) {
+      var t1 = (full.turns && full.turns["1"] && full.turns["1"][side]) || {};
+      var t2 = (full.turns && full.turns["2"] && full.turns["2"][side]) || {};
+      var card = el("div", { class: "card" }, [el("h3", null, (full.sides[side] || {}).name || side)]);
+      if (t1.panel && t1.panel.verification) card.appendChild(UI.recordRow("Turn 1 verification result", t1.panel.verification.result));
+      if (t1.redTeam) card.appendChild(UI.recordRow("Turn 1 red team", t1.redTeam));
+      Object.keys(t2.panel || {}).forEach(function (cell) {
+        var v = t2.panel[cell] && t2.panel[cell].verification;
+        if (v) card.appendChild(UI.recordRow("Turn 2 " + cell + " verification result", v.result));
+      });
+      if (t2.redTeam) card.appendChild(UI.recordRow("Turn 2 red team", t2.redTeam));
+      onRequest.appendChild(card);
+    });
+    section("Hand out on request", onRequest);
+    if (full.plenary) section("Plenary", el("div", { class: "card" }, renderAny(full.plenary)));
+    if (full.branching) section("Branching", el("div", { class: "card" }, renderAny(full.branching)));
+    if (full.cells) section("Cells", el("div", { class: "card" }, renderAny(full.cells)));
+    if (full.observables) section("Observables", el("div", { class: "card" }, renderAny(full.observables)));
+    if (full.debrief) section("Debrief", el("div", { class: "card" }, renderAny(full.debrief)));
+    if (full.pairs && full.pairs.length) {
+      section("Condition variants (" + full.pairs.length + " pairs)", el("div", { class: "card" }, el("details", null, [el("summary", null, "Show every pair"), el("div", { class: "details-body" }, UI.list(full.pairs.map(function (p) { return el("div", null, [el("div", { class: "record-key" }, p.path), el("div", null, "ai: " + p.ai), el("div", null, "control: " + p.control)]); })))])));
+    }
+    return wrap;
+  }
+
+  // Print one part of the page: the attribute drives the print stylesheet; afterprint clears it.
+  function printPart(mode) {
+    main.setAttribute("data-print", mode);
+    window.print();
+  }
+
+  // Chromium prints nothing of a closed <details>; open them all for the print and restore after.
+  var detailsOpenedForPrint = [];
+  window.addEventListener("beforeprint", function () {
+    detailsOpenedForPrint = Array.prototype.slice.call(document.querySelectorAll("details:not([open])"));
+    detailsOpenedForPrint.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener("afterprint", function () {
+    detailsOpenedForPrint.forEach(function (d) { d.open = false; });
+    detailsOpenedForPrint = [];
+    main.removeAttribute("data-print");
+  });
 
   function renderConsolePreview(scenarioId) {
     setPoll(null);
@@ -2550,22 +3094,41 @@
       // Variant toggle: the ai variants (conditions B and C) or the control variants (condition A),
       // so a printed paper pack matches what the screen would have shown.
       var variant = radioRow("previewVariant", "Text variants", [{ value: "B", label: "AI variants (conditions B and C)" }, { value: "A", label: "Control variants (condition A)" }], "B");
-      var printButton = el("button", { type: "button", class: "btn btn-quiet" }, "Print");
-      printButton.addEventListener("click", function () { window.print(); });
-      var body = el("div", { class: "screen" });
-      holder.appendChild(el("div", { class: "card no-print" }, [variant.node, el("div", { class: "actions" }, [printButton])]));
-      holder.appendChild(body);
+      var sideHolder = el("div");
+      var printPack = el("button", { type: "button", class: "btn btn-primary" }, "Print participant pack");
+      var printSheet = el("button", { type: "button", class: "btn btn-quiet" }, "Print facilitator sheet (facilitator only)");
+      var note = el("p", { class: "muted small" });
+      var controls = el("div", { class: "card no-print preview-controls" }, [variant.node, sideHolder, el("div", { class: "actions" }, [printPack, printSheet]), note]);
+      var packHolder = el("div", { class: "screen" });
+      var sheetHolder = el("div", { class: "screen" });
+      holder.appendChild(controls);
+      holder.appendChild(packHolder);
+      holder.appendChild(sheetHolder);
+      printPack.addEventListener("click", function () { printPart("pack"); });
+      printSheet.addEventListener("click", function () { printPart("facilitator"); });
+      var full = null;
+      var side = null;
+      function renderPack() {
+        UI.clear(packHolder);
+        if (!full || !side) return;
+        var variantText = full.variant === "control" ? "control variants (condition A)" : "AI variants (conditions B and C)";
+        packHolder.appendChild(el("p", { class: "notice no-print" }, "Showing the " + variantText + ". Below is the participant pack for " + ((full.sides[side] || {}).name || side) + " as the terminal would show it, one page per sheet; the facilitator sheet follows and is never part of the participant print."));
+        packHolder.appendChild(participantPack(full, side));
+      }
       function load(condition) {
-        UI.clear(body);
-        body.appendChild(el("p", { class: "muted" }, "Loading."));
-        api("GET", "/api/scenarios/" + encodeURIComponent(scenarioId) + "/full?condition=" + encodeURIComponent(condition)).then(function (full) {
-          UI.clear(body);
-          body.appendChild(el("p", { class: "notice" }, "Facilitator view: all sides, all cells and the ground truth. Nothing here is shown to a group. Showing the " + (full.variant === "control" ? "control variants (condition A)" : "AI variants (conditions B and C)") + "."));
-          Object.keys(full).forEach(function (k) {
-            if (k === "condition" || k === "variant") return;
-            body.appendChild(el("details", { open: k === "sides" || k === "facilitator" }, [el("summary", null, k), el("div", { class: "details-body" }, renderAny(full[k]))]));
-          });
-        }, function (err) { UI.clear(body); body.appendChild(el("div", { class: "notice is-error" }, "Could not load: " + err.message)); });
+        UI.clear(packHolder); UI.clear(sheetHolder); UI.clear(sideHolder);
+        packHolder.appendChild(el("p", { class: "muted" }, "Loading."));
+        api("GET", "/api/scenarios/" + encodeURIComponent(scenarioId) + "/full?condition=" + encodeURIComponent(condition)).then(function (loaded) {
+          full = loaded;
+          var sideIds = Object.keys(full.sides || {});
+          if (!side || sideIds.indexOf(side) < 0) side = sideIds[0] || null;
+          var sideRow = radioRow("previewSide", "Participant pack for", sideIds.map(function (k) { return { value: k, label: full.sides[k].name || k }; }), side);
+          sideRow.onChange(function (value) { side = value; renderPack(); });
+          sideHolder.appendChild(sideRow.node);
+          note.textContent = full.survey ? "" : "The baseline and survey forms are not served by this preview; print them separately.";
+          renderPack();
+          sheetHolder.appendChild(facilitatorSheet(full));
+        }, function (err) { UI.clear(packHolder); packHolder.appendChild(el("div", { class: "notice is-error" }, "Could not load: " + err.message)); });
       }
       variant.onChange(load);
       load(variant.value());
@@ -2581,10 +3144,9 @@
         var scenarioSelect = el("select", { id: "dryScenario" }, scenarios.map(function (s) { return el("option", { value: s.id }, (s.shortTitle || s.id) + " — " + (s.title || "")); }));
         var sideSelect = el("select", { id: "drySide" });
         function fillSides() {
-          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0] || {};
-          var sides = Array.isArray(s.sides) ? s.sides : Object.keys(s.sides || {}).map(function (k) { return Object.assign({ id: k }, s.sides[k]); });
+          var s = scenarios.filter(function (x) { return x.id === scenarioSelect.value; })[0];
           UI.clear(sideSelect);
-          sides.forEach(function (side) { if (side.hasAI !== false) sideSelect.appendChild(el("option", { value: side.id || side }, side.name || side.id || side)); });
+          scenarioSides(s).forEach(function (side) { if (side.hasAI !== false) sideSelect.appendChild(el("option", { value: side.id }, side.name || side.id)); });
         }
         fillSides();
         scenarioSelect.addEventListener("change", fillSides);
@@ -2648,8 +3210,9 @@
       ]));
       return { cols: cols, last: null };
     });
-    setPoll(function () {
-      return api("GET", "/api/me").then(function (me) {
+    // Observer payload: sides[side] = { name, kind, draft, assessments, submissions, actions, marks, ready }.
+    setPoll(function (signal) {
+      return api("GET", "/api/me", undefined, { signal: signal }).then(function (me) {
         var s = shape.session(me);
         var sides = me.sides || {};
         var observing = me.side && sides[me.side] ? "Observer · " + (sides[me.side].name || me.side) : "Observer";
@@ -2662,10 +3225,13 @@
         Object.keys(sides).forEach(function (side) {
           var v = sides[side] || {};
           var card = el("div", { class: "card" }, [el("h2", null, v.name || side), el("p", { class: "faint" }, (v.kind === "simulated" ? "Simulated side" : (v.ready ? "Ready" : "")))]);
-          var turns = turn ? [turn] : Object.keys(v.drafts || v.draft || {}).map(Number);
+          // The observer payload sends sides[side].draft (as the group payload's `draft`); the
+          // facilitator's stored session names the same thing `drafts` (docs/decisions.md).
+          var drafts = v.draft || v.drafts || {};
+          var turns = turn ? [turn] : Object.keys(drafts).map(Number);
           if (!turns.length) card.appendChild(el("p", { class: "muted" }, "No draft yet."));
           turns.forEach(function (tn) {
-            var draft = (v.drafts && v.drafts[tn]) || (v.draft && v.draft[tn]) || {};
+            var draft = drafts[tn] || {};
             var sub = (v.submissions && v.submissions[tn]) || null;
             var a = (v.assessments && v.assessments[tn]) || {};
             card.appendChild(el("h3", null, "Turn " + tn + (sub ? " — submitted" : " — draft")));
@@ -2673,7 +3239,6 @@
           });
           ctx.cols.appendChild(card);
         });
-        if (s.stage === "debrief" && me.debrief) ctx.cols.appendChild(el("div", { class: "card" }, [el("h2", null, "Debrief"), debriefView(me, me.debrief)]));
       });
     });
   }
@@ -2690,6 +3255,7 @@
       var after = parsed.path === "p" ? "p" : (parsed.path || "");
       var cleanHash = after ? "#" + after : "";
       history.replaceState(null, "", location.pathname + location.search + cleanHash);
+      store.remove("closed");
       if (after === "p") {
         auth.signOut();
         gateWith(code, "p").catch(function (err) { renderGate({ participant: true, message: gateErrorText(err) }); });
@@ -2699,6 +3265,9 @@
       gateWith(code, "").catch(function (err) { renderGate({ message: gateErrorText(err) }); });
       return;
     }
+    // After the session closed (see unauthorised()), a reload keeps the closed screen rather than
+    // showing an empty gate; a new QR link clears the marker above, and the screen offers the gate.
+    if (!auth.token() && store.get("closed")) return renderClosed();
     if (parsed.path === "p") return renderParticipant(parsed);
     var role = auth.role();
     if (!auth.token() || !role) return renderGate();

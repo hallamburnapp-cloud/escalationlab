@@ -77,21 +77,27 @@
     return trimmed.split(/\s+/).length;
   }
 
-  function debounce(fn, ms) {
-    var handle = null;
-    return function () {
-      var args = arguments;
-      clearTimeout(handle);
-      handle = setTimeout(function () { handle = null; fn.apply(null, args); }, ms);
-    };
-  }
-
+  // Write to a live region (#live by default). Messages that arrive within 30 ms of each other
+  // are joined into one write ("Stage: Turn 1. Indicators."), because a second write to the same
+  // node inside a screen reader's debounce replaces the first; the node is cleared first so that a
+  // repeated identical message is announced again.
+  var announceQueues = {};
   function announce(message, region) {
-    var node = document.getElementById(region || "live");
+    var id = region || "live";
+    var node = document.getElementById(id);
     if (!node) return;
-    node.textContent = "";
-    // A second write makes repeated identical messages re-announce.
-    setTimeout(function () { node.textContent = message; }, 30);
+    var text = String(message === null || message === undefined ? "" : message).trim();
+    if (!text) return;
+    var q = announceQueues[id];
+    if (!q) {
+      q = announceQueues[id] = { messages: [] };
+      node.textContent = "";
+      q.handle = setTimeout(function () {
+        delete announceQueues[id];
+        node.textContent = q.messages.join(" ");
+      }, 30);
+    }
+    if (q.messages.indexOf(text) < 0) q.messages.push(/[.!?]$/.test(text) ? text : text + ".");
   }
 
   // A button that asks for a short confirmation inline before calling onConfirm.
@@ -569,7 +575,7 @@
 
   window.UI = {
     el: el, append: append, clear: clear, paras: paras, list: list, recordRow: recordRow,
-    wordCount: wordCount, debounce: debounce, announce: announce, confirmButton: confirmButton,
+    wordCount: wordCount, announce: announce, confirmButton: confirmButton,
     field: field, mmss: mmss, createTimer: createTimer,
     qrMatrix: qrMatrix, qrSvg: qrSvg, qrBlock: qrBlock
   };
