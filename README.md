@@ -11,15 +11,16 @@ This repository is the public website, served by GitHub Pages from its main bran
 | Path | What it is | Where it comes from |
 |---|---|---|
 | `index.html` | The Escalation Lab front page (brand kit, October 2026). Its inline scope SVG and animation CSS must not be altered or minified | Brand kit; head additions noted in the commit history |
+| `scope.js` | Keeps the front page's scope sweeping after the kit's opening turn; pointing at or tabbing to a lab holds the sweep on it; off under reduced motion | Edited here (owner's request) |
 | `site.css` | Shared design tokens and the parent header, footer and page styles | Taken from the front page's rules |
-| `about.html`, `research.html`, `404.html` | Parent-brand inner pages | Edited here |
+| `about.html`, `research.html`, `licence.html`, `404.html` | Parent-brand inner pages | Edited here |
 | `glossary.html`, `instructor.html`, `sources.html`, `index-2.html` | Redirects from old addresses to `/flashpoint/` | Edited here |
 | `enter-lab.js` | The front page's access-code handler for the sealed research lab | Edited here |
 | `favicon.*`, `apple-touch-icon.png`, `icon-*.png`, `site.webmanifest`, `og-image.png`, `og-flashpoint.png` | Icons, manifest and share cards | Brand kit |
 | `brand/` | Logos and marks (`svg/`, `png/`) | Brand kit; do not edit the SVGs |
 | `flashpoint/` | FLASHPOINT:2027, built (obfuscated), with its own icons | The game's repository, `flashpoint-2027`: run its build and copy the output here |
 | `lab/` | The TIN PROPHET lab's pages. They hold no scenario text: content reaches a device only from the lab server, after a valid code | The private lab repository: `LAB_API_BASE=https://lab-api.escalationlab.org npm run build`, then copy `dist/lab/` here |
-| `CNAME`, `LICENSE.md`, `CITATION.cff` | Site settings and terms | Edited here |
+| `CNAME`, `LICENSE.md`, `CITATION.cff` | Site settings and terms (`licence.html` is the readable page; keep the two in step) | Edited here |
 
 The lab's server, scenarios and research documents are not published here; the server runs at `lab-api.escalationlab.org` from a separate private repository.
 
