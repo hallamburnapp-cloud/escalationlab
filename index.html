@@ -1,18 +1,99 @@
-<!DOCTYPE html> <html lang="en" data-theme="dark"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width,initial-scale=1"> <title>Escalation Lab</title> <meta name="referrer" content="same-origin"> <meta name="description" content="Escalation Lab builds crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions."> <meta name="author" content="Hallam Burnapp"> <meta name="copyright" content="© 2026 Hallam Burnapp. All rights reserved."> <link rel="canonical" href="https://escalationlab.org/"> <meta property="og:type" content="website"> <meta property="og:site_name" content="Escalation Lab"> <meta property="og:title" content="Escalation Lab"> <meta property="og:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions."> <meta property="og:url" content="https://escalationlab.org/"> <meta property="og:image" content="https://escalationlab.org/og-image.png"> <meta property="og:image:width" content="1200"> <meta property="og:image:height" content="630"> <meta property="og:image:alt" content="FLASHPOINT:2027, a crisis-origins exercise for strategic studies seminars. An Escalation Lab project by Hallam Burnapp."> <meta name="twitter:card" content="summary_large_image"> <meta name="twitter:title" content="Escalation Lab"> <meta name="twitter:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions."> <meta name="twitter:image" content="https://escalationlab.org/og-image.png"> <meta name="theme-color" content="#0a0e12"> <link rel="icon" type="image/svg+xml" href="/favicon.svg"> <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png"> <link rel="apple-touch-icon" href="/apple-touch-icon.png"> <link rel="preconnect" href="https://fonts.googleapis.com"> <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin> <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet"> <link rel="stylesheet" href="/site.css"> </head> <body class="hubpage"> <script> // Legacy exercise links (escalationlab.org/?seed=CODE&timer=off) now belong to FLASHPOINT:2027.
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escalation Lab</title>
+<meta name="referrer" content="same-origin">
+<meta name="description" content="Escalation Lab builds crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
+<meta name="author" content="Hallam Burnapp">
+<meta name="copyright" content="© 2026 Hallam Burnapp. All rights reserved.">
+<link rel="canonical" href="https://escalationlab.org/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Escalation Lab">
+<meta property="og:title" content="Escalation Lab">
+<meta property="og:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
+<meta property="og:url" content="https://escalationlab.org/">
+<meta property="og:image" content="https://escalationlab.org/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="FLASHPOINT:2027, a crisis-origins exercise for strategic studies seminars. An Escalation Lab project by Hallam Burnapp.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Escalation Lab">
+<meta name="twitter:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
+<meta name="twitter:image" content="https://escalationlab.org/og-image.png">
+<meta name="theme-color" content="#0a0e12">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body class="hubpage">
+<script>
+// Legacy exercise links (escalationlab.org/?seed=CODE&timer=off) now belong to FLASHPOINT:2027.
 (function () {
   try {
     var params = new URLSearchParams(location.search);
     if (params.has("seed") || params.has("timer")) location.replace("/flashpoint/" + location.search);
   } catch (e) {}
-})(); </script> <main class="hub" id="main"> <p class="kicker">ESCALATION LAB · CRISIS SIMULATIONS FOR TEACHING AND RESEARCH</p> <h1 class="hub-title">Escalation Lab</h1> <p class="hub-lede">Escalation Lab builds crisis simulations in which students and researchers take decisions under time pressure and uncertainty, and see how escalation runs away from decision-makers.</p> <section aria-labelledby="labs-heading"> <h2 class="section-head" id="labs-heading">LABS</h2> <div class="tiles"> <article class="tile" id="tile-flashpoint"> <div class="tile-head"> <h3>FLASHPOINT:2027</h3> <span class="status status-open">Open</span> </div> <p>A branching crisis-origins exercise for seminars. Six seats at the table during a fictional July 2027 crisis across the Baltic, orbit and the Taiwan Strait; no account, no download.</p> <p class="tile-foot"><a class="btn" href="/flashpoint/">Play</a></p> </article> <article class="tile" id="tile-belfer"> <div class="tile-head"> <h3>Belfer Lab</h3> <span class="status status-invite">By invitation</span> </div> <p>A private research lab for Phase II of the Belfer Center / Managing the Atom crisis simulations. Enter an access code to join a session.</p> <form class="code-form" id="labCodeForm" action="/lab/" method="get" autocomplete="off"> <label for="labCode">ACCESS CODE</label> <div class="code-row"> <input id="labCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="40" aria-describedby="labCodeNote" required> <button class="btn" type="submit">Enter</button> </div> <span class="code-note" id="labCodeNote">Codes are issued by the session facilitator.</span> </form> </article> <article class="tile tile-muted" id="tile-future"> <div class="tile-head"> <h3>Future labs</h3> <span class="status status-prep">In preparation</span> </div> <p>Further simulations for teaching and research will be listed here when they are ready.</p> </article> </div> </section> <section aria-labelledby="shared-heading"> <h2 class="section-head" id="shared-heading">SHARED PAGES</h2> <ul class="pagelist"> <li><a href="/flashpoint/instructor.html">Facilitator annex</a> <span class="pagelist-note">FLASHPOINT:2027</span></li> <li><a href="/flashpoint/glossary.html">Glossary</a> <span class="pagelist-note">FLASHPOINT:2027</span></li> <li><a href="/flashpoint/sources.html">Sources &amp; method</a> <span class="pagelist-note">FLASHPOINT:2027</span></li> <li><a href="/research.html">Research &amp; privacy</a> <span class="pagelist-note">What the private labs collect</span></li> <li><a href="/about.html">About &amp; contact</a></li> </ul> </section> </main> <footer class="site-footer"> <div class="credit">An Escalation Lab project by Hallam Burnapp (PhD researcher, University of Aberdeen) · © 2026 Hallam Burnapp. All rights reserved.</div> </footer> <script> // The access-code box only ever goes to /lab/#code=…: a fragment is never sent to any server. The form's own action (/lab/, no query) is the no-JS fallback.
-(function () {
-  var form = document.getElementById("labCodeForm");
-  var input = document.getElementById("labCode");
-  if (!form || !input) return;
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
-    var code = input.value.trim();
-    if (!code) { input.focus(); return; }
-    location.assign("/lab/#code=" + encodeURIComponent(code));
-  });
-})(); </script> </body> </html> 
+})();
+</script>
+
+<main class="hub" id="main">
+  <p class="kicker">ESCALATION LAB · CRISIS SIMULATIONS FOR TEACHING AND RESEARCH</p>
+  <h1 class="hub-title">Escalation Lab</h1>
+  <p class="hub-lede">Escalation Lab builds crisis simulations in which students and researchers take decisions under time pressure and uncertainty, and see how escalation runs away from decision-makers.</p>
+
+  <section aria-labelledby="labs-heading">
+    <h2 class="section-head" id="labs-heading">LABS</h2>
+    <div class="tiles">
+
+      <article class="tile" id="tile-flashpoint">
+        <div class="tile-head">
+          <h3>FLASHPOINT:2027</h3>
+          <span class="status status-open">Open</span>
+        </div>
+        <p>A branching crisis-origins exercise for seminars. Six seats at the table during a fictional July 2027 crisis across the Baltic, orbit and the Taiwan Strait; no account, no download.</p>
+        <p class="tile-foot"><a class="btn" href="/flashpoint/">Play</a></p>
+      </article>
+
+      <article class="tile" id="tile-belfer">
+        <div class="tile-head">
+          <h3>Belfer Lab</h3>
+          <span class="status status-invite">By invitation</span>
+        </div>
+        <p>A private research lab for Phase II of the Belfer Center / Managing the Atom crisis simulations. Sessions run on the lab's own equipment in the room; participants join from the link or QR code they are given at the session.</p>
+      </article>
+
+      <article class="tile tile-muted" id="tile-future">
+        <div class="tile-head">
+          <h3>Future labs</h3>
+          <span class="status status-prep">In preparation</span>
+        </div>
+        <p>Further simulations for teaching and research will be listed here when they are ready.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section aria-labelledby="shared-heading">
+    <h2 class="section-head" id="shared-heading">SHARED PAGES</h2>
+    <ul class="pagelist">
+      <li><a href="/flashpoint/instructor.html">Facilitator annex</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
+      <li><a href="/flashpoint/glossary.html">Glossary</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
+      <li><a href="/flashpoint/sources.html">Sources &amp; method</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
+      <li><a href="/research.html">Research &amp; privacy</a> <span class="pagelist-note">What the private labs collect</span></li>
+      <li><a href="/about.html">About &amp; contact</a></li>
+    </ul>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="credit">An Escalation Lab project by Hallam Burnapp (PhD researcher, University of Aberdeen) · © 2026 Hallam Burnapp. All rights reserved.</div>
+</footer>
+
+</body>
+</html>
