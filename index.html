@@ -1,119 +1,487 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<!doctype html>
+<html lang="en-GB">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Escalation Lab</title>
-<meta name="referrer" content="same-origin">
-<meta name="description" content="Escalation Lab builds crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escalation Lab — crisis simulations for teaching and research</title>
+<meta name="description" content="Escalation Lab builds crisis simulations for teaching and research: open exercises such as FLASHPOINT:2027, and sealed research labs run with partner institutions.">
 <meta name="author" content="Hallam Burnapp">
 <meta name="copyright" content="© 2026 Hallam Burnapp. All rights reserved.">
+<meta name="referrer" content="same-origin">
 <link rel="canonical" href="https://escalationlab.org/">
+<meta name="theme-color" content="#E6E9E1">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Escalation Lab">
 <meta property="og:title" content="Escalation Lab">
-<meta property="og:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
+<meta property="og:description" content="Crisis simulations for teaching and research: open exercises such as FLASHPOINT:2027, and sealed research labs run with partner institutions.">
 <meta property="og:url" content="https://escalationlab.org/">
 <meta property="og:image" content="https://escalationlab.org/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="FLASHPOINT:2027, a crisis-origins exercise for strategic studies seminars. An Escalation Lab project by Hallam Burnapp.">
+<meta property="og:image:alt" content="Escalation Lab: crisis simulations for teaching and research, by Hallam Burnapp.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Escalation Lab">
-<meta name="twitter:description" content="Crisis simulations for teaching and research: FLASHPOINT:2027, a public crisis-origins exercise, and private research labs run with partner institutions.">
 <meta name="twitter:image" content="https://escalationlab.org/og-image.png">
-<meta name="theme-color" content="#0a0e12">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="twitter:title" content="Escalation Lab">
+<meta name="twitter:description" content="Crisis simulations for teaching and research: open exercises such as FLASHPOINT:2027, and sealed research labs run with partner institutions.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/site.css">
-</head>
-<body class="hubpage">
+<style>
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--sheet); color: var(--ink); font: 400 1.125rem/1.6 var(--text); }
+a { color: inherit; text-underline-offset: .2em; text-decoration-thickness: 1px; }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.wrap { max-width: 78rem; margin: 0 auto; padding: 0 var(--gutter); }
+
+/* exercise traffic marker — every message in a drill is prefixed like this */
+
+.site-head .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; padding-block: 1.1rem; }
+.lockup { height: 2.5rem; width: auto; display: block; }
+.site-nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: clamp(1rem, 2.4vw, 2rem); flex-wrap: wrap; }
+.site-nav a { font: 600 .95rem/1 var(--display); text-decoration: none; }
+.site-nav a:hover { color: var(--red); }
+
+/* the plotting sheet */
+.table {
+  background-color: var(--sheet);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  background-position: -1px -1px;
+  border-block: 1px solid var(--grid-major);
+}
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 6fr); gap: clamp(2rem, 5vw, 4rem); align-items: center; padding-block: clamp(2.5rem, 6vw, 5rem); }
+.hero h1 { margin: 0; }
+.h1-line { display: block; width: 100%; height: auto; color: var(--ink); }
+.h1-line + .h1-line { margin-top: 3.2%; }
+.lede { max-width: 31rem; margin: 2rem 0 0; font-size: 1.25rem; line-height: 1.55; background: var(--sheet); box-shadow: 0 0 0 .5rem var(--sheet); }
+.actions { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; align-items: center; margin-top: 2rem; }
+.btn { display: inline-flex; align-items: center; min-height: 3rem; padding: 0 1.4rem; background: var(--ink); color: var(--sheet); font: 700 1rem/1 var(--display); font-stretch: 110%; text-decoration: none; border: 0; cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+.btn:hover { background: var(--red); }
+.link-quiet { font: 600 1rem/1 var(--display); text-decoration: none; border-bottom: 2px solid var(--red); padding-bottom: .2rem; background: var(--sheet); }
+
+.scope { width: 100%; height: auto; display: block; overflow: visible; }
+.scope .range { fill: none; stroke: var(--grid-major); stroke-width: 1.5; }
+.scope .brg { stroke: var(--ink-2); stroke-width: 1.5; }
+.scope .brg-label { font: 500 13px var(--data); fill: var(--ink-2); }
+.scope .orbit { fill: none; stroke: var(--amber); stroke-width: 2; stroke-dasharray: 2 7; stroke-linecap: round; opacity: .7; }
+.scope .ring { fill: rgba(230, 233, 225, .55); stroke: var(--amber); stroke-width: 11; }
+.scope .cardinal { stroke: var(--amber); stroke-width: 11; fill: none; }
+.scope .sweep { transform-box: view-box; transform-origin: 330px 330px; transform: rotate(42deg); }
+.scope .sweep-wedge { fill: var(--amber); opacity: .16; }
+.scope .sweep-line { stroke: var(--amber); stroke-width: 2.5; }
+.scope .own { fill: var(--ink); }
+.scope .track { fill: var(--red); opacity: .45; }
+.scope .dia { fill: var(--red); }
+.scope .seal { fill: var(--sealed); }
+.scope .unk { fill: none; stroke: var(--ink-2); stroke-width: 2.5; stroke-dasharray: 5 4; }
+.scope .leader { stroke: var(--ink); stroke-width: 1.5; }
+.scope .c-name { font: 700 21px var(--display); font-stretch: 112%; fill: var(--ink); }
+.scope .c-name.dim { fill: var(--ink-2); }
+.scope .c-note { font: italic 400 18px var(--text); fill: var(--ink-2); }
+.scope a { cursor: pointer; }
+.scope a:hover .c-name { fill: var(--red); }
+.scope a:focus-visible { outline: none; }
+.scope a:focus-visible .c-name { fill: var(--red); text-decoration: underline; }
+@media (prefers-reduced-motion: no-preference) {
+  .scope .sweep { animation: sweep 3.4s linear .3s both; }
+  .scope .c2 { animation: paint .35s ease-out 1.2s both; }
+  .scope .c3 { animation: paint .35s ease-out 2.35s both; }
+  .scope .c1 { animation: paint .35s ease-out 3.6s both; }
+}
+@keyframes sweep { from { transform: rotate(-318deg); } to { transform: rotate(42deg); } }
+@keyframes paint { from { opacity: 0; } to { opacity: 1; } }
+
+/* labs */
+.labs { padding-block: clamp(3rem, 7vw, 5.5rem) clamp(2rem, 4vw, 3rem); }
+h2 { font: 750 clamp(1.6rem, 2.8vw, 2.2rem)/1.05 var(--display); font-stretch: 115%; margin: 0 0 1.75rem; letter-spacing: -.01em; }
+h3 { margin: 0; }
+
+.screen { background: var(--screen); color: var(--paper); padding: clamp(1.5rem, 4vw, 3rem); display: grid; grid-template-columns: minmax(0, 1fr) clamp(8rem, 18vw, 13rem); gap: 1.5rem clamp(1.5rem, 4vw, 3.5rem); align-items: start;
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px); }
+.series { display: block; width: min(100%, 34rem); height: auto; }
+.fp-mark { width: 100%; height: auto; grid-column: 2; grid-row: 1 / span 3; }
+.screen p { max-width: 34rem; margin: 1.5rem 0 0; color: color-mix(in srgb, var(--paper) 88%, var(--screen)); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 1rem 2rem; margin: 0; padding: 1.25rem 0 0; border-top: 1px solid var(--screen-rule); max-width: 40rem; }
+.facts dt { font: 600 .9rem/1.3 var(--display); color: var(--screen-amber); }
+.facts dd { margin: .3rem 0 0; font-size: 1.05rem; line-height: 1.45; }
+.screen .btn { background: var(--screen-amber); color: var(--screen); }
+.screen .btn:hover { background: #F6C682; }
+.screen .link-quiet { background: none; border-color: var(--screen-amber); color: var(--paper); }
+.screen :focus-visible { outline-color: var(--screen-amber); }
+
+.sealed { margin-top: 1.5rem; background: var(--sealed); color: var(--bone); padding: clamp(1.75rem, 5vw, 3.5rem); display: grid; grid-template-columns: minmax(0, 7fr) minmax(16rem, 5fr); gap: 2rem clamp(2rem, 5vw, 4rem); align-items: end; position: relative; }
+.sealed::before { content: ""; position: absolute; inset: .6rem; border: 1px solid var(--sealed-rule); pointer-events: none; }
+.seal-head { display: flex; align-items: center; gap: 1.25rem; }
+.seal-mark { width: clamp(4rem, 8vw, 5.5rem); height: auto; flex: none; }
+.seal-name { display: block; width: min(100%, 26rem); height: auto; color: var(--bone); }
+.sealed p { max-width: 32rem; margin: 1.5rem 0 0; color: color-mix(in srgb, var(--bone) 78%, var(--sealed)); }
+.sealed .status-line { font: 500 .8rem/1 var(--data); letter-spacing: .1em; color: var(--screen-red); margin-top: 1.75rem; display: flex; align-items: center; gap: .6rem; }
+.sealed .status-line::before { content: ""; width: .5rem; height: .5rem; background: var(--screen-red); }
+.access { position: relative; }
+.access label { display: block; font: 600 .95rem/1 var(--display); margin-bottom: .6rem; color: var(--bone); }
+.access .row { display: flex; gap: .5rem; }
+.access input { flex: 1; min-width: 0; min-height: 3.1rem; padding: 0 1rem; background: transparent; color: var(--bone); border: 1px solid #4A4E50; font: 500 1.1rem var(--data); letter-spacing: .2em; text-transform: uppercase; }
+.access input:focus-visible { outline: 2px solid var(--bone); outline-offset: 0; }
+.access .btn { background: var(--bone); color: var(--sealed); }
+.access .btn:hover { background: #fff; }
+.access .btn:focus-visible { outline-color: var(--bone); }
+.access .status { margin: .75rem 0 0; min-height: 1.4em; font-size: .95rem; color: #F07A72; }
+.access .help { margin: .75rem 0 0; font-size: .95rem; color: #8E9294; }
+
+.next { display: flex; align-items: center; gap: 1rem; margin-top: 1.5rem; padding: 1.1rem 0; border-top: 1px dashed var(--grid-major); border-bottom: 1px dashed var(--grid-major); color: var(--ink-2); }
+.next svg { width: 1.9rem; height: 1.9rem; flex: none; }
+.next p { margin: 0; }
+
+.facilitators { padding-block: clamp(2.5rem, 6vw, 4.5rem); }
+.resources { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0 2.5rem; }
+.resources li { border-top: 2px solid var(--ink); padding: 1.1rem 0; }
+.resources a { font: 700 1.2rem/1.2 var(--display); font-stretch: 108%; text-decoration: none; }
+.resources a:hover { color: var(--red); }
+.resources p { margin: .4rem 0 0; color: var(--ink-2); font-size: 1.02rem; line-height: 1.45; }
+
+.site-foot { padding-block: clamp(2.5rem, 6vw, 4rem); border-top: 1px solid var(--grid-major); }
+.foot-grid { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); gap: 2.5rem clamp(2rem, 5vw, 4rem); align-items: end; }
+.legend h2, .tb-label { font: 700 .85rem/1.2 var(--display); font-stretch: 105%; color: var(--ink-2); margin: 0; letter-spacing: 0; }
+.legend ul { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .85rem; }
+.legend li { display: grid; grid-template-columns: 2.25rem 1fr; gap: .75rem; align-items: center; font-size: 1.02rem; line-height: 1.35; background: var(--sheet); }
+.legend svg { width: 2.25rem; height: 1.5rem; }
+.legend b { font: 700 1rem/1.2 var(--display); font-stretch: 108%; display: block; }
+.legend span { color: var(--ink-2); }
+/* drawing title block, bottom-right of the sheet */
+.titleblock { background: var(--sheet); border: 2px solid var(--ink); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.titleblock > div { padding: .8rem 1rem; border-top: 1px solid var(--ink); border-left: 1px solid var(--ink); }
+.titleblock .tb-title { grid-column: 1 / -1; border-top: 0; border-left: 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; padding: 1.1rem 1rem; }
+.titleblock .tb-title .lockup { height: 2.1rem; }
+.titleblock .tb-title p { margin: 0; color: var(--ink-2); font-size: 1rem; }
+.titleblock .tb-cell { border-left: 0; }
+.titleblock .tb-r { border-left: 1px solid var(--ink); }
+.titleblock .tb-wide { grid-column: 1 / -1; border-left: 0; }
+.tb-value { margin: .3rem 0 0; font: 600 1rem/1.35 var(--display); }
+.tb-value a { text-decoration: none; border-bottom: 1px solid var(--red); }
+.tb-value a:hover { color: var(--red); }
+.tb-links { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; }
+.tb-rights { font: 400 .95rem/1.4 var(--text); color: var(--ink-2); margin: .3rem 0 0; }
+@media (max-width: 56rem) { .foot-grid { grid-template-columns: 1fr; } }
+@media (max-width: 30rem) { .titleblock { grid-template-columns: 1fr; } .titleblock .tb-r { border-left: 0; } }
+
+@media (max-width: 56rem) {
+  .hero .wrap { grid-template-columns: 1fr; }
+  .scope { max-width: 36rem; margin: 0 auto; }
+  .sealed { grid-template-columns: 1fr; align-items: start; }
+}
+@media (max-width: 40rem) {
+  .screen { grid-template-columns: 1fr; }
+  .fp-mark { grid-column: 1; grid-row: auto; width: 6rem; order: -1; }
+  .scope .c-name { font-size: 26px; }
+  .scope .c-note { font-size: 22px; }
+}
+@media (max-width: 30rem) {
+  .lockup { height: 2rem; }
+  .access .row { flex-direction: column; }
+}
+</style>
 <script>
-// Legacy exercise links (escalationlab.org/?seed=CODE&timer=off) now belong to FLASHPOINT:2027.
-(function () {
-  try {
-    var params = new URLSearchParams(location.search);
-    if (params.has("seed") || params.has("timer")) location.replace("/flashpoint/" + location.search);
-  } catch (e) {}
-})();
+// Legacy exercise links (escalationlab.org/?seed=CODE&timer=off) belong to FLASHPOINT:2027.
+(function () { try { var q = new URLSearchParams(location.search); if (q.has("seed") || q.has("timer")) location.replace("/flashpoint/" + location.search); } catch (e) {} })();
 </script>
+<script src="/lab/config.js" defer></script>
+<script src="/enter-lab.js" defer></script>
+</head>
+<body>
+<header class="site-head">
+  <div class="wrap">
+    <a href="/" aria-label="Escalation Lab home"><svg class="lockup" viewBox="0 0 545.8 100" role="img" aria-label="Escalation Lab"><circle cx="50" cy="50" r="28" fill="none" stroke="#A86A12" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="#A86A12" stroke-width="5.5" fill="none"/>
+<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="#A86A12" stroke-width="2.2" opacity="0.55"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="#CF2F25" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/><g color="#15191B" transform="translate(130,32) scale(0.36)"><path transform="translate(0.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(82.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(172.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V72.0 L28.0,92.0 H74" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(262.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(358.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(436.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(532.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(622.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(654.00,0)" d="M28.0,8.0 H56.0 L76.0,28.0 V72.0 L56.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(754.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(894.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(972.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(1068.00,0)" d="M8.0,0 V100 M8.0,8.0 H40.0 L60.0,28.0 V39 L49.0,50 H8.0 M8.0,50 H57.0 L68.0,61 V72.0 L48.0,92.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g></svg></a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="#labs">Labs</a></li>
+        <li><a href="#facilitators">For facilitators</a></li>
+        <li><a href="/research.html">Research and privacy</a></li>
+        <li><a href="/about.html">About</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
 
-<main class="hub" id="main">
-  <p class="kicker">ESCALATION LAB · CRISIS SIMULATIONS FOR TEACHING AND RESEARCH</p>
-  <h1 class="hub-title">Escalation Lab</h1>
-  <p class="hub-lede">Escalation Lab builds crisis simulations in which students and researchers take decisions under time pressure and uncertainty, and see how escalation runs away from decision-makers.</p>
-
-  <section aria-labelledby="labs-heading">
-    <h2 class="section-head" id="labs-heading">LABS</h2>
-    <div class="tiles">
-
-      <article class="tile" id="tile-flashpoint">
-        <div class="tile-head">
-          <h3>FLASHPOINT:2027</h3>
-          <span class="status status-open">Open</span>
+<main>
+  <section class="hero table" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <h1 id="hero-title"><span class="sr">It's an exercise. Until it isn't.</span><svg class="h1-line" viewBox="0 0 1184.0 100" aria-hidden="true" focusable="false"><g color="currentColor"><path transform="translate(0.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(32.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(122.00,0)" d="M0,0 H16 V30 H0 Z" fill="currentColor"/>
+<path transform="translate(154.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(286.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(382.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(382.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(382.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(522.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(604.00,0)" d="M0,0 H20.8 L80,100 H59.2 Z" fill="currentColor"/>
+<path transform="translate(604.00,0)" d="M59.2,0 H80 L20.8,100 H0 Z" fill="currentColor"/>
+<path transform="translate(700.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(782.00,0)" d="M8.0,100 V8.0 H48.0 L68.0,28.0 V39.0 L57.0,50.0 H8.0 M42.0,50.0 L68.0,70.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(874.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V72.0 L28.0,92.0 H74" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(964.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(996.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(1086.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(1168.00,0)" d="M0,84 H16 V100 H0 Z" fill="currentColor"/></g></svg><svg class="h1-line" viewBox="0 0 958.0 100" aria-hidden="true" focusable="false"><g color="currentColor"><path transform="translate(0.00,0)" d="M8.0,0 V72.0 L28.0,92.0 H52.0 L72.0,72.0 V0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(96.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(96.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(96.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(194.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(284.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(316.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(436.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(468.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(600.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(632.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(722.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(722.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(722.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(820.00,0)" d="M0,0 H16 V30 H0 Z" fill="currentColor"/>
+<path transform="translate(852.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(942.00,0)" d="M0,84 H16 V100 H0 Z" fill="currentColor"/></g></svg></h1>
+        <p class="lede">Escalation Lab builds crisis simulations for teaching and research. Players take decisions under time pressure and incomplete information, and find out how quickly a crisis moves past the limits they meant to set.</p>
+        <div class="actions">
+          <a class="btn" href="#labs">See the labs</a>
+          <a class="link-quiet" href="/about.html">About the project</a>
         </div>
-        <p>A branching crisis-origins exercise for seminars. Six seats at the table during a fictional July 2027 crisis across the Baltic, orbit and the Taiwan Strait; no account, no download.</p>
-        <p class="tile-foot"><a class="btn" href="/flashpoint/">Play</a></p>
-      </article>
-
-      <article class="tile" id="tile-belfer">
-        <div class="tile-head">
-          <h3>Belfer Lab</h3>
-          <span class="status status-invite">By invitation</span>
-        </div>
-        <p>A private research lab for Phase II of the Belfer Center / Managing the Atom crisis simulations. Enter an access code to join a session.</p>
-        <form class="code-form" id="labCodeForm" action="/lab/" method="get" autocomplete="off">
-          <label for="labCode">ACCESS CODE</label>
-          <div class="code-row">
-            <input id="labCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="40" aria-describedby="labCodeNote" required>
-            <button class="btn" type="submit">Enter</button>
-          </div>
-          <span class="code-note" id="labCodeNote">Codes are issued by the session facilitator.</span>
-        </form>
-      </article>
-
-      <article class="tile tile-muted" id="tile-future">
-        <div class="tile-head">
-          <h3>Future labs</h3>
-          <span class="status status-prep">In preparation</span>
-        </div>
-        <p>Further simulations for teaching and research will be listed here when they are ready.</p>
-      </article>
-
+      </div>
+      <svg class="scope" viewBox="-10 -10 680 680" role="group" aria-label="The Escalation Lab scope. Three contacts: FLASHPOINT:2027, an open exercise; a sealed research lab, by invitation; and an unidentified contact for the next lab in preparation."><circle class="range" cx="330" cy="330" r="96"/>
+<circle class="range" cx="330" cy="330" r="193"/>
+<line class="brg" x1="330.0" y1="54.0" x2="330.0" y2="40.0"/>
+<line class="brg" x1="379.1" y1="51.3" x2="380.4" y2="44.4"/>
+<line class="brg" x1="426.8" y1="64.1" x2="429.2" y2="57.5"/>
+<line class="brg" x1="468.0" y1="91.0" x2="475.0" y2="78.9"/>
+<line class="brg" x1="511.9" y1="113.2" x2="516.4" y2="107.8"/>
+<line class="brg" x1="546.8" y1="148.1" x2="552.2" y2="143.6"/>
+<line class="brg" x1="569.0" y1="192.0" x2="581.1" y2="185.0"/>
+<line class="brg" x1="595.9" y1="233.2" x2="602.5" y2="230.8"/>
+<line class="brg" x1="608.7" y1="280.9" x2="615.6" y2="279.6"/>
+<line class="brg" x1="606.0" y1="330.0" x2="620.0" y2="330.0"/>
+<line class="brg" x1="608.7" y1="379.1" x2="615.6" y2="380.4"/>
+<line class="brg" x1="595.9" y1="426.8" x2="602.5" y2="429.2"/>
+<line class="brg" x1="569.0" y1="468.0" x2="581.1" y2="475.0"/>
+<line class="brg" x1="546.8" y1="511.9" x2="552.2" y2="516.4"/>
+<line class="brg" x1="511.9" y1="546.8" x2="516.4" y2="552.2"/>
+<line class="brg" x1="468.0" y1="569.0" x2="475.0" y2="581.1"/>
+<line class="brg" x1="426.8" y1="595.9" x2="429.2" y2="602.5"/>
+<line class="brg" x1="379.1" y1="608.7" x2="380.4" y2="615.6"/>
+<line class="brg" x1="330.0" y1="606.0" x2="330.0" y2="620.0"/>
+<line class="brg" x1="280.9" y1="608.7" x2="279.6" y2="615.6"/>
+<line class="brg" x1="233.2" y1="595.9" x2="230.8" y2="602.5"/>
+<line class="brg" x1="192.0" y1="569.0" x2="185.0" y2="581.1"/>
+<line class="brg" x1="148.1" y1="546.8" x2="143.6" y2="552.2"/>
+<line class="brg" x1="113.2" y1="511.9" x2="107.8" y2="516.4"/>
+<line class="brg" x1="91.0" y1="468.0" x2="78.9" y2="475.0"/>
+<line class="brg" x1="64.1" y1="426.8" x2="57.5" y2="429.2"/>
+<line class="brg" x1="51.3" y1="379.1" x2="44.4" y2="380.4"/>
+<line class="brg" x1="54.0" y1="330.0" x2="40.0" y2="330.0"/>
+<line class="brg" x1="51.3" y1="280.9" x2="44.4" y2="279.6"/>
+<line class="brg" x1="64.1" y1="233.2" x2="57.5" y2="230.8"/>
+<line class="brg" x1="91.0" y1="192.0" x2="78.9" y2="185.0"/>
+<line class="brg" x1="113.2" y1="148.1" x2="107.8" y2="143.6"/>
+<line class="brg" x1="148.1" y1="113.2" x2="143.6" y2="107.8"/>
+<line class="brg" x1="192.0" y1="91.0" x2="185.0" y2="78.9"/>
+<line class="brg" x1="233.2" y1="64.1" x2="230.8" y2="57.5"/>
+<line class="brg" x1="280.9" y1="51.3" x2="279.6" y2="44.4"/>
+<text class="brg-label" x="330.0" y="79.0" text-anchor="middle">000</text>
+<text class="brg-label" x="586.0" y="335.0" text-anchor="middle">090</text>
+<text class="brg-label" x="330.0" y="591.0" text-anchor="middle">180</text>
+<text class="brg-label" x="74.0" y="335.0" text-anchor="middle">270</text>
+<ellipse class="orbit" cx="330" cy="330" rx="250" ry="78" transform="rotate(-9 330 330)"/>
+<circle class="ring" cx="330" cy="330" r="290"/>
+<path class="cardinal" d="M330,6 V42 M654,330 H618 M330,654 V618 M6,330 H42"/>
+<g class="sweep"><path d="M330,330 L193.9,73.9 A290,290 0 0 1 330.0,40.0 Z" class="sweep-wedge"/><line x1="330" y1="330" x2="330.0" y2="40.0" class="sweep-line"/></g>
+<g class="contact c1">
+<circle class="track" cx="442.8" cy="289.0" r="3.2"/>
+<circle class="track" cx="449.5" cy="261.0" r="3.2"/>
+<circle class="track" cx="451.2" cy="231.8" r="3.2"/>
+<a href="/flashpoint/" aria-label="FLASHPOINT:2027, open exercise"><path class="dia" d="M447.1,184.9 L462.1,199.9 L447.1,214.9 L432.1,199.9 Z"/><line class="leader" x1="435.1" y1="187.9" x2="421.1" y2="171.9"/><text class="c-name" x="417.1" y="141.9" text-anchor="end">FLASHPOINT:2027</text><text class="c-note" x="417.1" y="164.9" text-anchor="end">Open exercise</text></a></g>
+<g class="contact c2"><a href="#sealed" aria-label="Sealed research lab, by invitation"><rect class="seal" x="431.8" y="476.0" width="60" height="22"/><line class="leader" x1="441.8" y1="499.0" x2="429.8" y2="517.0"/><text class="c-name" x="425.8" y="541.0" text-anchor="end">TIN PROPHET</text><text class="c-note" x="425.8" y="564.0" text-anchor="end">Sealed, by invitation</text></a></g>
+<g class="contact c3"><path class="unk" d="M166.5,335.9 a15,15 0 0 1 30,0 a15,15 0 0 1 0,30 a15,15 0 0 1 -30,0 a15,15 0 0 1 0,-30 Z"/><text class="c-name dim" x="175.5" y="316.9" text-anchor="middle">Unidentified</text><text class="c-note" x="175.5" y="396.9" text-anchor="middle">Next lab in preparation</text></g>
+<circle class="own" cx="330" cy="330" r="4"/></svg>
     </div>
   </section>
 
-  <section aria-labelledby="shared-heading">
-    <h2 class="section-head" id="shared-heading">SHARED PAGES</h2>
-    <ul class="pagelist">
-      <li><a href="/flashpoint/instructor.html">Facilitator annex</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
-      <li><a href="/flashpoint/glossary.html">Glossary</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
-      <li><a href="/flashpoint/sources.html">Sources &amp; method</a> <span class="pagelist-note">FLASHPOINT:2027</span></li>
-      <li><a href="/research.html">Research &amp; privacy</a> <span class="pagelist-note">What the private labs collect</span></li>
-      <li><a href="/about.html">About &amp; contact</a></li>
-    </ul>
+  <section class="labs" id="labs" aria-labelledby="labs-title">
+    <div class="wrap">
+      <h2 id="labs-title">Labs</h2>
+
+      <article class="screen" aria-labelledby="fp-title">
+        <h3 id="fp-title"><span class="sr">FLASHPOINT:2027</span><svg class="series" viewBox="0 -18 1238.0 136" aria-hidden="true" focusable="false"><g color="#ECE6D8"><path transform="translate(0.00,0)" d="M64,8.0 H8.0 V100 M8.0,52 H56" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(80.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(158.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(254.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(344.00,0)" d="M8.0,0 V100 M70.0,0 V100 M8.0,50 H70.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(438.00,0)" d="M8.0,100 V8.0 H46.0 L66.0,28.0 V39.0 L55.0,50.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(528.00,0)" d="M28.0,8.0 H56.0 L76.0,28.0 V72.0 L56.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(628.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(660.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(660.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(660.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(758.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g><rect x="862.0" y="-18" width="376.0" height="136" fill="#EB5B55"/><g color="#0A0E12" transform="translate(884.0,0)"><path transform="translate(0.00,0)" d="M0,8.0 H44.0 L64.0,28.0 V39 L53.0,50 H19.0 L8.0,61 V92.0 H72" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(88.00,0)" d="M28.0,8.0 H42.0 L62.0,28.0 V72.0 L42.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(174.00,0)" d="M0,8.0 H44.0 L64.0,28.0 V39 L53.0,50 H19.0 L8.0,61 V92.0 H72" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(262.00,0)" d="M0,8.0 H62.0 V22.0 L25.2,100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g></svg></h3>
+        <svg class="fp-mark" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="28" fill="none" stroke="#F0B463" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="#F0B463" stroke-width="5.5" fill="none"/>
+<circle cx="50" cy="50" r="15" fill="none" stroke="#F0B463" stroke-width="2" stroke-dasharray="3.2 3.2" opacity="0.6"/>
+<path d="M50,50 L50,24 A26,26 0 0 1 72.5,37 Z" fill="#F0B463" opacity="0.22"/>
+<path d="M50,50 L72.5,37" stroke="#F0B463" stroke-width="2.2"/>
+<path d="M36,33 L63,54 L41,66" fill="none" stroke="#EB5B55" stroke-width="2.4" stroke-dasharray="4 3" opacity="0.9"/>
+<path d="M36,27.5 L41.5,33 L36,38.5 L30.5,33 Z" fill="#EB5B55"/>
+<path d="M63,48.5 L68.5,54 L63,59.5 L57.5,54 Z" fill="#EB5B55"/>
+<path d="M41,60.5 L46.5,66 L41,71.5 L35.5,66 Z" fill="#EB5B55"/></svg>
+        <p>An open crisis-origins exercise for seminars. Six players take seats at the table during a fictional crisis in July 2027 that runs across the Baltic, orbit and the Taiwan Strait.</p>
+        <dl class="facts">
+          <div><dt>Players</dt><dd>Six seats at the table</dd></div>
+          <div><dt>Theatres</dt><dd>Baltic, orbit, Taiwan Strait</dd></div>
+          <div><dt>Access</dt><dd>In the browser; no account, no download</dd></div>
+        </dl>
+        <div class="actions">
+          <a class="btn" href="/flashpoint/">Play FLASHPOINT:2027</a>
+          <a class="link-quiet" href="/flashpoint/instructor.html">Run it with a class</a>
+        </div>
+      </article>
+
+      <article class="sealed" id="sealed" aria-labelledby="seal-title">
+        <div>
+          <div class="seal-head">
+            <svg class="seal-mark" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="28" fill="none" stroke="#D9D4C7" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="#D9D4C7" stroke-width="5.5" fill="none"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="#EB5B55" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10"/>
+<rect x="17" y="41.5" width="66" height="16" fill="#0C0E0F"/>
+<rect x="21" y="44" width="58" height="11" fill="#D9D4C7"/></svg>
+            <h3 id="seal-title"><span class="sr">Tin Prophet</span><svg class="seal-name" viewBox="0 0 884.0 100" aria-hidden="true" focusable="false"><g color="currentColor"><path transform="translate(0.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(90.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(122.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(122.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(122.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(262.00,0)" d="M8.0,100 V8.0 H46.0 L66.0,28.0 V39.0 L55.0,50.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(352.00,0)" d="M8.0,100 V8.0 H48.0 L68.0,28.0 V39.0 L57.0,50.0 H8.0 M42.0,50.0 L68.0,70.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(444.00,0)" d="M28.0,8.0 H56.0 L76.0,28.0 V72.0 L56.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(544.00,0)" d="M8.0,100 V8.0 H46.0 L66.0,28.0 V39.0 L55.0,50.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(634.00,0)" d="M8.0,0 V100 M70.0,0 V100 M8.0,50 H70.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(728.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(810.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g></svg></h3>
+          </div>
+          <p>A sealed research lab run with a partner institution. The scenario, the partner and the session details open only to participants.</p>
+          <p class="status-line">BY INVITATION ONLY</p>
+        </div>
+        <form class="access" id="lab-access" autocomplete="off" novalidate>
+          <label for="lab-code">Access code</label>
+          <div class="row">
+            <input id="lab-code" name="code" spellcheck="false" autocapitalize="characters" required aria-describedby="lab-status lab-help">
+            <button class="btn" type="submit">Enter</button>
+          </div>
+          <p class="status" id="lab-status" role="status" aria-live="polite"></p>
+          <p class="help" id="lab-help">Codes come from your session facilitator. <a href="/research.html">What this lab records</a></p>
+        </form>
+      </article>
+
+      <div class="next">
+        <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M12,12 a8,8 0 0 1 16,0 a8,8 0 0 1 0,16 a8,8 0 0 1 -16,0 a8,8 0 0 1 0,-16 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 3"/></svg>
+        <p>Further labs are in preparation.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="facilitators table" id="facilitators" aria-labelledby="fac-title">
+    <div class="wrap">
+      <h2 id="fac-title">For facilitators</h2>
+      <ul class="resources">
+        <li><a href="/flashpoint/instructor.html">Facilitator annex</a><p>How to run FLASHPOINT:2027 with a seminar group.</p></li>
+        <li><a href="/flashpoint/glossary.html">Glossary</a><p>The terms players meet during the exercise.</p></li>
+        <li><a href="/flashpoint/sources.html">Sources and method</a><p>The research and design choices behind the scenario.</p></li>
+      </ul>
+    </div>
   </section>
 </main>
 
-<footer class="site-footer">
-  <div class="credit">An Escalation Lab project by Hallam Burnapp (PhD researcher, University of Aberdeen) · © 2026 Hallam Burnapp. All rights reserved.</div>
+<footer class="site-foot table">
+  <div class="wrap foot-grid">
+    <section class="legend" aria-labelledby="legend-title">
+      <h2 id="legend-title">Legend</h2>
+      <ul>
+        <li><svg viewBox="0 0 36 24" aria-hidden="true"><path d="M18,3 L27,12 L18,21 L9,12 Z" fill="#CF2F25"/></svg><p style="margin:0"><b>Open exercise</b><span>Anyone can play, in the browser.</span></p></li>
+        <li><svg viewBox="0 0 36 24" aria-hidden="true"><rect x="3" y="7" width="30" height="11" fill="#0C0E0F"/></svg><p style="margin:0"><b>Sealed lab</b><span>By invitation, with an access code.</span></p></li>
+        <li><svg viewBox="0 0 36 24" aria-hidden="true"><path d="M12,6 a6,6 0 0 1 12,0 a6,6 0 0 1 0,12 a6,6 0 0 1 -12,0 a6,6 0 0 1 0,-12 Z" transform="translate(0 0)" fill="none" stroke="#4A5557" stroke-width="1.8" stroke-dasharray="3 2.5"/></svg><p style="margin:0"><b>Unidentified</b><span>A lab in preparation.</span></p></li>
+      </ul>
+    </section>
+    <div class="titleblock">
+      <div class="tb-title">
+        <a href="/" aria-label="Escalation Lab home"><svg class="lockup" viewBox="0 0 545.8 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="28" fill="none" stroke="#A86A12" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="#A86A12" stroke-width="5.5" fill="none"/>
+<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="#A86A12" stroke-width="2.2" opacity="0.55"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="#CF2F25" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/><g color="#15191B" transform="translate(130,32) scale(0.36)"><path transform="translate(0.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(82.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(172.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V72.0 L28.0,92.0 H74" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(262.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(358.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(436.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(532.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(622.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(654.00,0)" d="M28.0,8.0 H56.0 L76.0,28.0 V72.0 L56.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(754.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(894.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(972.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(1068.00,0)" d="M8.0,0 V100 M8.0,8.0 H40.0 L60.0,28.0 V39 L49.0,50 H8.0 M8.0,50 H57.0 L68.0,61 V72.0 L48.0,92.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g></svg></a>
+        <p>Crisis simulations for teaching and research.</p>
+      </div>
+      <div class="tb-cell"><p class="tb-label">Created by</p><p class="tb-value">Hallam Burnapp</p></div>
+      <div class="tb-cell tb-r"><p class="tb-label">Based in</p><p class="tb-value">Aberdeen, Scotland</p></div>
+      <div class="tb-cell"><p class="tb-label">Contact</p><p class="tb-value"><a href="/about.html">About and contact</a></p></div>
+      <div class="tb-cell tb-r"><p class="tb-label">Records</p><p class="tb-value"><a href="/research.html">Research and privacy</a></p></div>
+      <div class="tb-wide"><p class="tb-label">For facilitators</p><p class="tb-value tb-links"><a href="/flashpoint/instructor.html">Facilitator annex</a><a href="/flashpoint/glossary.html">Glossary</a><a href="/flashpoint/sources.html">Sources and method</a></p></div>
+      <div class="tb-wide"><p class="tb-rights">© 2026 Hallam Burnapp. All rights reserved.</p></div>
+    </div>
+  </div>
 </footer>
 
 <script>
-// The access-code box only ever goes to /lab/#code=…: a fragment is never sent to any server. The form's own action (/lab/, no query) is the no-JS fallback.
+/* Wire to the existing access-code handler: define window.enterLab(code, statusEl).
+   Reveal the partner name only after a valid code. Keep codes out of URLs. */
 (function () {
-  var form = document.getElementById("labCodeForm");
-  var input = document.getElementById("labCode");
-  if (!form || !input) return;
-  form.addEventListener("submit", function (event) {
-    event.preventDefault();
-    var code = input.value.trim();
-    if (!code) { input.focus(); return; }
-    location.assign("/lab/#code=" + encodeURIComponent(code));
+  var form = document.getElementById('lab-access');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = form.elements.code, status = document.getElementById('lab-status');
+    var code = (input.value || '').trim().toUpperCase();
+    if (!code) { status.textContent = 'Enter the access code from your facilitator.'; input.focus(); return; }
+    status.textContent = '';
+    if (typeof window.enterLab === 'function') { window.enterLab(code, status); }
   });
 })();
 </script>

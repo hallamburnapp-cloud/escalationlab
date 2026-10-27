@@ -1,4 +1,4 @@
-// Belfer Lab — app.js
+// TIN PROPHET (sealed research lab) — app.js
 // The lab client: hash router, API client, and the screens for the gate, the group
 // terminal, the participant (phone) flow, the facilitator console and the observer view.
 //
@@ -198,7 +198,8 @@
   // 2. Router and polling
   // ---------------------------------------------------------------------------
 
-  // The hash holds a path and optional key=value pairs: "#p&code=BLF-…", "#console/session/abc".
+  // The hash holds a path and optional key=value pairs: "#p", "#console/session/abc". A code in the
+  // hash ("#code=…", "#p&code=…") is still accepted and removed at once, though no generated link carries one.
   function parseHash(hash) {
     var raw = (hash || "").replace(/^#/, "");
     var out = { path: "", params: {} };
@@ -241,6 +242,8 @@
     main.setAttribute("aria-busy", "true");
     UI.clear(main);
     main.className = "app";
+    // The entry and lobby screens wear the sealed-lab look; the simulation keeps its own interface.
+    document.body.classList.toggle("sealed", /^(gate:|group:waiting:|closed|p:table|p:wait:)/.test(key));
     timer.clearListeners();
     var ctx = build(main) || {};
     ctx._built = true;
@@ -601,7 +604,7 @@
       var seconds = Number(err.retryAfter) || 60;
       return "Too many attempts; wait " + seconds + " seconds.";
     }
-    if (err.status === 401) return "That code was not recognised.";
+    if (err.status === 401) return "That code isn't recognised. Check it with your facilitator.";
     if (err.status === 403) return "The lab server is not configured to accept this page's address (" + location.origin + "). Tell the facilitator.";
     if (!err.status) return "Could not reach the lab server. Check the connection and try again.";
     if (err.status === 404 || err.status === 405 || err.status >= 500 || /^http_\d+$/.test(String(err.code))) {
@@ -619,10 +622,10 @@
       var input = el("input", { type: "text", id: "gateCode", class: "code", autocomplete: "off", autocapitalize: "characters", spellcheck: "false", maxlength: "40", inputmode: "text", required: true });
       var button = el("button", { type: "submit", class: "btn btn-primary" }, "Enter");
       var form = el("form", { class: "card gate", autocomplete: "off" }, [
-        el("p", { class: "kicker" }, "Belfer Lab"),
+        el("p", { class: "kicker" }, "TIN PROPHET"),
         el("h1", null, opts.participant ? "Join on your phone" : "Enter your access code"),
         el("p", { class: "lede" }, opts.participant
-          ? "Enter the code shown on your table's terminal. You will then choose your table number."
+          ? "Enter your group's access code, the same one your table typed into the terminal. You will then choose your table number."
           : "Codes are issued by the session facilitator. Nothing you type here is sent anywhere except the lab server."),
         UI.field("Access code", input),
         error,
@@ -814,7 +817,7 @@
       });
       if (store.get("consent." + shape.session(me).id) || shape.consent(me)) { consentButton.setDisabled(true); consentNote.textContent = "Group consent recorded."; }
       root.appendChild(el("div", { class: "screen" }, [
-        el("p", { class: "kicker" }, shape.scenario(me).title || "Belfer Lab"),
+        el("p", { class: "kicker" }, shape.scenario(me).title || "TIN PROPHET"),
         el("h1", null, shape.sideName(me)),
         el("div", { class: "waiting" }, [el("strong", null, "Waiting for the facilitator."), el("span", null, "The briefing will appear here when the session starts.")]),
         el("div", { class: "card is-quiet" }, [
@@ -1716,20 +1719,21 @@
   function renderSurveyStage(me) {
     var sid = shape.session(me).id;
     return show("group:survey:" + sid, function (root) {
-      var url = shape.surveyUrl(me) || participantLink(store.get("token"));
+      var url = shape.surveyUrl(me) || participantLink();
       root.appendChild(el("div", { class: "screen" }, [
         el("p", { class: "kicker" }, (shape.scenario(me).shortTitle || "") + " · " + shape.sideName(me)),
         el("h1", null, "Survey"),
-        el("p", { class: "lede" }, "Each participant now completes the survey on their own phone. Scan the code or open the link, then enter your table number (P1 to P12)."),
+        el("p", { class: "lede" }, "Each participant now completes the survey on their own phone. Scan the QR code or open the link, type your group's access code, then choose your table number (P1 to P12)."),
         el("div", { class: "card" }, [UI.qrBlock(url, { large: true, label: "QR code for the participant survey link" })]),
         el("div", { class: "notice" }, "This terminal is locked until the debrief is released.")
       ]));
     });
   }
 
-  function participantLink(code) {
+  // The phone route without any code: participants type the group code at the gate.
+  function participantLink() {
     var base = location.origin + location.pathname.replace(/[^/]*$/, "");
-    return base + "#p&code=" + encodeURIComponent(code || "");
+    return base + "#p";
   }
 
   // 6.11 Debrief
@@ -1870,7 +1874,7 @@
       var error = el("div", { class: "notice is-error", role: "alert" });
       var button = el("button", { type: "submit", class: "btn btn-primary" }, "Continue");
       var form = el("form", { class: "card gate" }, [
-        el("p", { class: "kicker" }, "Belfer Lab"),
+        el("p", { class: "kicker" }, "TIN PROPHET"),
         el("h1", null, "Your table number"),
         el("p", { class: "lede" }, "Choose the number on the card in front of you (P1 to P12). Keep the same number all day. No name or email is asked for anywhere."),
         UI.field("Table number", select),
@@ -2282,9 +2286,10 @@
 
   var STAGES = ["setup", "briefing", "turn1", "statements1", "turn2", "statements2", "survey", "debrief", "closed"];
 
-  function labLink(code, participantFlag) {
+  // Links for the printed sheet and QR codes open the lab only; the code is typed at the gate.
+  function labLink(participantFlag) {
     var base = location.origin + location.pathname.replace(/[^/]*$/, "");
-    return base + (participantFlag ? "#p&code=" : "#code=") + encodeURIComponent(code);
+    return base + (participantFlag ? "#p" : "");
   }
 
   function renderConsoleSession(id) {
@@ -2371,16 +2376,16 @@
       sideKeys.forEach(function (side) {
         var code = codes.sides[side];
         if (!code) { node.appendChild(el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side)), el("p", { class: "muted" }, "Played by the simulated adversary.")])); return; }
-        var link = links.groups[side] || labLink(code, false);
-        var plink = links.participants[side] || labLink(code, true);
+        var link = links.groups[side] || labLink(false);
+        var plink = links.participants[side] || labLink(true);
         node.appendChild(el("div", { class: "grid-2" }, [
-          el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — group terminal"), el("div", { class: "code-value" }, code), UI.qrBlock(link, { label: "QR code for the " + fshape.sideName(s, side) + " terminal" })]),
-          el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — participants' phones"), el("p", { class: "faint" }, "Same code; each person adds their table number."), UI.qrBlock(plink, { label: "QR code for " + fshape.sideName(s, side) + " participants" })])
+          el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — group terminal"), el("div", { class: "code-value" }, code), el("p", { class: "faint" }, "Scan or open the link, then type this code."), UI.qrBlock(link, { label: "QR code for the " + fshape.sideName(s, side) + " terminal" })]),
+          el("div", { class: "code-block" }, [el("h3", null, fshape.sideName(s, side) + " — participants' phones"), el("div", { class: "code-value" }, code), el("p", { class: "faint" }, "Scan to open the lab, then type this code; each person adds their table number."), UI.qrBlock(plink, { label: "QR code for " + fshape.sideName(s, side) + " participants" })])
         ]));
       });
       Object.keys(codes.observer || {}).forEach(function (oside) {
         var ocode = codes.observer[oside];
-        var olink = links.observer[oside] || labLink(ocode, false);
+        var olink = links.observer[oside] || labLink(false);
         var oname = oside === "all" ? "all sides" : fshape.sideName(s, oside);
         node.appendChild(el("div", { class: "code-block" }, [el("h3", null, "Observer — " + oname), el("p", { class: "faint" }, "For the observer sitting with this group; quick tags are recorded against this side."), el("div", { class: "code-value" }, ocode), UI.qrBlock(olink, { label: "QR code for the " + oname + " observer view" })]));
       });

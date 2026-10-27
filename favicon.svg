@@ -1,7 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <rect width="48" height="48" fill="#0a0e12"/>
-  <circle cx="24" cy="24" r="15" stroke="#ffb454" stroke-width="2"/>
-  <ellipse cx="24" cy="24" rx="15" ry="5.6" stroke="#ffb454" stroke-width="1" opacity="0.5"/>
-  <path d="M13 15 L21 22 L18 26 L27 31 L25 36" stroke="#ff4d4d" stroke-width="2.4" stroke-linejoin="miter"/>
-  <path d="M24 1v6M24 41v6M1 24h6M41 24h6" stroke="#ffb454" stroke-width="2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" ><title>Escalation Lab</title>
+<rect width="100" height="100" rx="18" fill="#0A0E12"/><g transform="translate(1 1) scale(.98)"><circle cx="50" cy="50" r="29" fill="none" stroke="#F0B463" stroke-width="10"/>
+<path d="M50,2 V18 M98,50 H82 M50,98 V82 M2,50 H18" stroke="#F0B463" stroke-width="9" fill="none"/>
+<path d="M28,24 L50,45 L38,52 L56,74" fill="none" stroke="#EB5B55" stroke-width="9" stroke-linejoin="miter" stroke-miterlimit="10"/></g>
 </svg>
