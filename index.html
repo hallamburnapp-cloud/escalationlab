@@ -65,7 +65,15 @@
           <h3>Belfer Lab</h3>
           <span class="status status-invite">By invitation</span>
         </div>
-        <p>A private research lab for Phase II of the Belfer Center / Managing the Atom crisis simulations. Sessions run on the lab's own equipment in the room; participants join from the link or QR code they are given at the session.</p>
+        <p>A private research lab for Phase II of the Belfer Center / Managing the Atom crisis simulations. Enter an access code to join a session.</p>
+        <form class="code-form" id="labCodeForm" action="/lab/" method="get" autocomplete="off">
+          <label for="labCode">ACCESS CODE</label>
+          <div class="code-row">
+            <input id="labCode" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="40" aria-describedby="labCodeNote" required>
+            <button class="btn" type="submit">Enter</button>
+          </div>
+          <span class="code-note" id="labCodeNote">Codes are issued by the session facilitator.</span>
+        </form>
       </article>
 
       <article class="tile tile-muted" id="tile-future">
@@ -95,5 +103,19 @@
   <div class="credit">An Escalation Lab project by Hallam Burnapp (PhD researcher, University of Aberdeen) · © 2026 Hallam Burnapp. All rights reserved.</div>
 </footer>
 
+<script>
+// The access-code box only ever goes to /lab/#code=…: a fragment is never sent to any server. The form's own action (/lab/, no query) is the no-JS fallback.
+(function () {
+  var form = document.getElementById("labCodeForm");
+  var input = document.getElementById("labCode");
+  if (!form || !input) return;
+  form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    var code = input.value.trim();
+    if (!code) { input.focus(); return; }
+    location.assign("/lab/#code=" + encodeURIComponent(code));
+  });
+})();
+</script>
 </body>
 </html>
