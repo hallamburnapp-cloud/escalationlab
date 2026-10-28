@@ -1,11 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" ><title>FLASHPOINT:2027</title>
-<rect width="100" height="100" rx="18" fill="#0A0E12"/><g transform="translate(1 1) scale(.98)"><circle cx="50" cy="50" r="28" fill="none" stroke="#F0B463" stroke-width="5.5"/>
-<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="#F0B463" stroke-width="5.5" fill="none"/>
-<circle cx="50" cy="50" r="15" fill="none" stroke="#F0B463" stroke-width="2" stroke-dasharray="3.2 3.2" opacity="0.6"/>
-<path d="M50,50 L50,24 A26,26 0 0 1 72.5,37 Z" fill="#F0B463" opacity="0.22"/>
-<path d="M50,50 L72.5,37" stroke="#F0B463" stroke-width="2.2"/>
-<path d="M36,33 L63,54 L41,66" fill="none" stroke="#EB5B55" stroke-width="2.4" stroke-dasharray="4 3" opacity="0.9"/>
-<path d="M36,27.5 L41.5,33 L36,38.5 L30.5,33 Z" fill="#EB5B55"/>
-<path d="M63,48.5 L68.5,54 L63,59.5 L57.5,54 Z" fill="#EB5B55"/>
-<path d="M41,60.5 L46.5,66 L41,71.5 L35.5,66 Z" fill="#EB5B55"/></g>
+<rect width="100" height="100" rx="18" fill="#0A0E12"/><g transform="translate(1 1) scale(.98)"><circle cx="50" cy="50" r="29" fill="none" stroke="#F0B463" stroke-width="10"/>
+<path d="M50,2 V18 M98,50 H82 M50,98 V82 M2,50 H18" stroke="#F0B463" stroke-width="9" fill="none"/>
+<path d="M39,28 L47,36 L39,44 L31,36 Z" fill="#EB5B55"/>
+<path d="M60,45 L68,53 L60,61 L52,53 Z" fill="#EB5B55"/>
+<path d="M43,55 L51,63 L43,71 L35,63 Z" fill="#EB5B55"/></g>
 </svg>
