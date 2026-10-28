@@ -626,7 +626,8 @@
         el("h1", null, opts.participant ? "Join on your phone" : "Enter your access code"),
         el("p", { class: "lede" }, opts.participant
           ? "Enter your group's access code, the same one your table typed into the terminal. You will then choose your table number."
-          : "Codes are issued by the session facilitator. Nothing you type here is sent anywhere except the lab server."),
+          : "Your facilitator gives you this code. If yours does not work, check it with them."),
+        el("p", { class: "faint" }, el("a", { href: "/research.html" }, "What this lab records")),
         UI.field("Access code", input),
         error,
         el("div", { class: "actions" }, [button])

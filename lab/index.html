@@ -20,7 +20,31 @@
 <body>
 <header class="topbar" id="topbar">
   <div class="topbar-inner">
-    <img class="topbar-brand topbar-lockup" src="/brand/svg/lockup-sealed-lab.svg" alt="TIN PROPHET" width="452" height="100">
+    <div class="topbar-left">
+      <a class="el-link" href="/" aria-label="Escalation Lab home page" title="Back to the Escalation Lab home page"><svg class="el-lockup" viewBox="0 0 545.8 100" aria-hidden="true" focusable="false"><g><circle cx="50" cy="50" r="28" fill="none" stroke="currentColor" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="currentColor" stroke-width="5.5" fill="none"/>
+<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.55"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/></g>
+<g transform="translate(130,32.0) scale(0.36)"><path transform="translate(0.00,0)" d="M66,8.0 H8.0 V92.0 H66 M8.0,50 H60" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(82.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V39 L19.0,50 H55.0 L66.0,61 V72.0 L46.0,92.0 H0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(172.00,0)" d="M74,8.0 H28.0 L8.0,28.0 V72.0 L28.0,92.0 H74" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(262.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(358.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(436.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(532.00,0)" d="M0,8.0 H74 M37.0,8.0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(622.00,0)" d="M8.0,0 V100" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(654.00,0)" d="M28.0,8.0 H56.0 L76.0,28.0 V72.0 L56.0,92.0 H28.0 L8.0,72.0 V28.0 Z" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(754.00,0)" d="M0,0 H16 V100 H0 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M66,0 H82 V100 H66 Z" fill="currentColor"/>
+<path transform="translate(754.00,0)" d="M0,0 H21.6 L82,100 H60.4 Z" fill="currentColor"/>
+<path transform="translate(894.00,0)" d="M8.0,0 V92.0 H62" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(972.00,0)" d="M8.0,100 V28.0 L28.0,8.0 H52.0 L72.0,28.0 V100 M8.0,60 H72.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/>
+<path transform="translate(1068.00,0)" d="M8.0,0 V100 M8.0,8.0 H40.0 L60.0,28.0 V39 L49.0,50 H8.0 M8.0,50 H57.0 L68.0,61 V72.0 L48.0,92.0 H8.0" fill="none" stroke="currentColor" stroke-width="16" stroke-linejoin="miter" stroke-miterlimit="4"/></g></svg><svg class="el-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="28" fill="none" stroke="currentColor" stroke-width="5.5"/>
+<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="currentColor" stroke-width="5.5" fill="none"/>
+<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.55"/>
+<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/></svg></a>
+      <img class="topbar-brand topbar-lockup" src="/brand/svg/lockup-sealed-lab.svg" alt="TIN PROPHET" width="452" height="100">
+    </div>
     <span class="topbar-item" id="topScenario"></span>
     <span class="topbar-item" id="topSide"></span>
     <span class="topbar-item" id="topTurn"></span>
@@ -28,11 +52,6 @@
     <span class="topbar-item topbar-timer mono" id="topTimer" role="timer" aria-live="off" aria-label="Turn timer"></span>
   </div>
   <div class="connection" id="connection" role="status" aria-atomic="true"></div>
-  <a class="el-link" href="/"><svg class="el-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false"><circle cx="50" cy="50" r="28" fill="none" stroke="currentColor" stroke-width="5.5"/>
-<path d="M50,4 V19.5 M96,50 H80.5 M50,96 V80.5 M4,50 H19.5" stroke="currentColor" stroke-width="5.5" fill="none"/>
-<ellipse cx="50" cy="50" rx="24" ry="7.5" transform="rotate(-9 50 50)" fill="none" stroke="currentColor" stroke-width="2.2" opacity="0.55"/>
-<path d="M27,24 L46,42 L37,48 L57,62 L49,72" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="miter" stroke-miterlimit="10" stroke-linecap="butt"/>
-</svg><span>An Escalation Lab project</span></a>
 </header>
 
 <main class="app" id="main" aria-busy="true">

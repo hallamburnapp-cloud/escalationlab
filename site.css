@@ -81,6 +81,9 @@ h3 { margin: 0; }
 .tb-value a:hover { color: var(--red); }
 .tb-links { display: flex; flex-wrap: wrap; gap: .4rem 1.25rem; }
 .tb-rights { font: 400 .95rem/1.4 var(--text); color: var(--ink-2); margin: .3rem 0 0; }
+/* Small and secondary by design: the owner wants it present, not prominent. */
+.tb-support { margin-left: .5rem; font-size: .85rem; color: var(--ink-2); text-decoration-thickness: 1px; text-underline-offset: .18em; white-space: nowrap; }
+.tb-support:hover { color: var(--ink); }
 @media (max-width: 56rem) { .foot-grid { grid-template-columns: 1fr; } }
 @media (max-width: 30rem) { .titleblock { grid-template-columns: 1fr; } .titleblock .tb-r { border-left: 0; } }
 
@@ -104,3 +107,7 @@ h3 { margin: 0; }
    series wordmark's 34rem width as their minimum and pushed the page wider than the screen
    (584px at 375px). Letting the items shrink keeps every width the same and changes no SVG or colour. */
 .screen > * { min-width: 0; }
+/* Phones: the four nav items on one line where they fit, otherwise a tidy two-by-two grid
+   (never "About" on its own line). */
+@media (max-width: 30rem) { .site-nav ul { gap: .85rem; } .site-nav a { font-size: .86rem; } }
+@media (max-width: 22.99rem) { .site-nav ul { display: grid; grid-template-columns: auto auto; justify-content: start; gap: .7rem 1.6rem; } }

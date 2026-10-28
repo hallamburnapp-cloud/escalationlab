@@ -498,10 +498,16 @@ details > .details-body { padding: 4px 12px 12px; display: grid; gap: var(--spac
    red #EB5B55 only for live or alert states. The simulation's own screens are unchanged. */
 .topbar { background: #0C0E0F; }
 .topbar-lockup { display: block; height: 1.6rem; width: auto; }
-.el-link { position: absolute; top: 0.85rem; right: var(--gutter); display: inline-flex; align-items: center; gap: 0.45rem; color: #D9D4C7; font-size: 0.8rem; text-decoration: none; }
-.el-link:hover span, .el-link:focus-visible span { text-decoration: underline; text-underline-offset: 0.2em; }
-.el-link .el-mark { width: 1.5rem; height: 1.5rem; flex: none; }
-@media (max-width: 40rem) { .el-link span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } }
+/* Escalation Lab | TIN PROPHET, as on FLASHPOINT's top bar: the parent in the kit's one-colour
+   artwork, muted, so the lab's own lockup leads; the full logo where it fits, the mark alone on the
+   narrowest phones (24px: the kit's minimum mark size). */
+.topbar-inner { align-items: center; }
+.topbar-left { display: flex; align-items: center; gap: 12px; margin-right: 8px; }
+.el-link { display: flex; align-items: center; color: #8E9294; padding: 4px 12px 4px 0; border-right: 1px solid #3A3E40; text-decoration: none; }
+.el-link:hover, .el-link:focus-visible { color: #D9D4C7; }
+.el-link .el-lockup { display: block; height: 22px; width: 120px; }
+.el-link .el-mark { display: none; width: 24px; height: 24px; }
+@media (max-width: 369px) { .el-link .el-lockup { display: none; } .el-link .el-mark { display: block; } }
 body.sealed {
   --bg: #0C0E0F; --bg-deep: #0C0E0F; --panel: #0C0E0F; --panel-2: #121516; --panel-raised: #16191A;
   --line: #2A2D2E; --line-strong: #3A3E40; --land: #121516;
