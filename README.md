@@ -17,7 +17,7 @@ This repository is the public website, served by GitHub Pages from its main bran
 | `glossary.html`, `instructor.html`, `sources.html`, `index-2.html` | Redirects from old addresses to `/flashpoint/` | Edited here |
 | `enter-lab.js` | The front page's access-code handler for the sealed research lab | Edited here |
 | `favicon.*`, `apple-touch-icon.png`, `icon-*.png`, `site.webmanifest`, `og-image.png`, `og-flashpoint.png` | Icons, manifest and share cards | Brand kit |
-| `brand/` | Logos and marks (`svg/`, `png/`) | Brand kit; do not edit the SVGs |
+| `brand/` | Logos and marks (`svg/`, `png/`). `svg/mark-flashpoint-small.svg` and `svg/mark-sealed-lab-small.svg` are the small-size cuts (below 24px: tab icons), drawn the way the kit cuts its own `favicon.svg` | Brand kit, plus the two small cuts; do not edit the kit's SVGs |
 | `flashpoint/` | FLASHPOINT:2027, built (obfuscated), with its own icons | The game's repository, `flashpoint-2027`: run its build and copy the output here |
 | `lab/` | The TIN PROPHET lab's pages. They hold no scenario text: content reaches a device only from the lab server, after a valid code | The private lab repository: `LAB_API_BASE=https://lab-api.escalationlab.org npm run build`, then copy `dist/lab/` here |
 | `CNAME`, `LICENSE.md`, `CITATION.cff` | Site settings and terms (`licence.html` is the readable page; keep the two in step) | Edited here |
