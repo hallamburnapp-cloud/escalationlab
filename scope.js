@@ -1,51 +1,70 @@
 /* Escalation Lab: the front page's scope keeps sweeping.
  *
- * The kit's opening sweep (CSS: @keyframes sweep, one turn resting on FLASHPOINT at 042°) plays
- * first. After a short rest the sweep keeps turning. Pointing at a lab (or tabbing to it) swings the
+ * The opening is the kit's: one turn from 042° back round to 042°, starting at 0.3 s and lasting
+ * 3.4 s, in step with the contacts that paint as the sweep passes them (CSS @keyframes paint). After
+ * a short rest on FLASHPOINT the sweep keeps turning. Pointing at a lab (or tabbing to it) swings the
  * sweep onto that lab and holds it there; moving the pointer off the scope, or tabbing away, sets it
- * turning again. Under prefers-reduced-motion nothing here runs and the scope stays still at 042°.
+ * turning again. Under prefers-reduced-motion it stays still at 042°.
+ *
+ * The rotation is drawn with SVG's own transform="rotate(angle 330 330)", which names the centre,
+ * rather than the CSS rotation in the kit's stylesheet: that relies on transform-box: view-box, which
+ * Safari measures from the corner of this viewBox (-10, -10), so its sweep pivoted about 10 units off
+ * centre. The kit's markup and CSS are left as they are; this script takes the rotation over.
  */
 (function () {
   "use strict";
 
+  var SVGNS = "http://www.w3.org/2000/svg";
   var scope = document.querySelector("svg.scope");
   var sweep = scope && scope.querySelector(".sweep");
   if (!scope || !sweep || !window.requestAnimationFrame) return;
 
   var motion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: no-preference)") : { matches: true };
+  var CX = 330, CY = 330;
+  var OPEN_DELAY = 300, OPEN_MS = 3400, START = -318, REST = 42; // the kit's @keyframes sweep timing
   var CRUISE = 40;      // degrees per second once it is turning (one turn in 9 s)
   var REST_MS = 1200;   // pause on FLASHPOINT after the opening sweep
   var BEARING = { c1: 42, c2: 140 }; // FLASHPOINT:2027, TIN PROPHET
 
-  var angle = 42, speed = 0, target = null;
-  var running = false, started = false, visible = true, pointerInside = false;
-  var last = 0, frame = 0, restTimer = 0;
+  // Move the sweep's artwork into a group this script rotates, and switch off the CSS rotation.
+  var arm = document.createElementNS(SVGNS, "g");
+  arm.setAttribute("class", "sweep-arm");
+  while (sweep.firstChild) arm.appendChild(sweep.firstChild);
+  sweep.appendChild(arm);
 
-  function currentAngle() {
-    var m = getComputedStyle(sweep).transform;
-    var v = /matrix\(([^)]+)\)/.exec(m || "");
-    if (!v) return angle;
-    var p = v[1].split(",").map(Number);
-    return Math.atan2(p[1], p[0]) * 180 / Math.PI;
-  }
+  // Keep the sweep in step with the contacts' paint animations (CSS, unchanged): they start together
+  // with the kit's sweep, so the opening begins OPEN_DELAY after the paint animation's own start,
+  // once the browser has actually started it. Until then the sweep waits at its starting bearing.
+  var now = function () { return document.timeline && document.timeline.currentTime != null ? document.timeline.currentTime : performance.now(); };
+  var openStart = Infinity;
+  try {
+    var paint = scope.querySelector(".c2").getAnimations().filter(function (a) { return a.animationName === "paint"; })[0];
+    if (paint && paint.ready) paint.ready.then(function (a) { openStart = (a.startTime != null ? a.startTime : now()) + OPEN_DELAY; schedule(); }, function () { openStart = now(); schedule(); });
+    else openStart = now() + OPEN_DELAY;
+  } catch (e) { openStart = now() + OPEN_DELAY; }
+  sweep.style.animation = "none";
+  sweep.style.transform = "none";
 
-  // Take over from the CSS animation, keeping the sweep where it is.
-  function takeOver() {
-    if (started) return;
-    started = true;
-    clearTimeout(restTimer);
-    angle = currentAngle();
-    sweep.style.animation = "none";
-    draw();
-  }
+  var angle = REST, speed = 0, target = null;
+  var mode = "opening";            // opening -> rest -> live
+  var visible = true, pointerInside = false;
+  var last = 0, frame = 0, restUntil = 0;
 
-  function draw() { sweep.style.transform = "rotate(" + angle.toFixed(2) + "deg)"; }
+  function draw() { arm.setAttribute("transform", "rotate(" + angle.toFixed(2) + " " + CX + " " + CY + ")"); }
 
-  function tick(now) {
+  function tick() {
     frame = 0;
-    var dt = last ? Math.min(0.1, (now - last) / 1000) : 0;
-    last = now;
-    if (target !== null) {
+    var t = now();
+    var dt = last ? Math.min(0.1, (t - last) / 1000) : 0;
+    last = t;
+    if (mode === "opening") {
+      var p = openStart === Infinity ? 0 : (t - openStart) / OPEN_MS;
+      if (p >= 1) { angle = REST; mode = "rest"; restUntil = t + REST_MS; }
+      else angle = START + 360 * Math.max(0, p);
+    } else if (mode === "rest") {
+      angle = REST;
+      if (t >= restUntil) mode = "live";
+    } else if (target !== null) {
       var delta = ((target - angle) % 360 + 540) % 360 - 180; // shortest way round
       angle += delta * (1 - Math.exp(-dt * 9));
       speed = 0;
@@ -58,30 +77,23 @@
     schedule();
   }
 
-  function schedule() {
-    var settled = target !== null && Math.abs(((target - angle) % 360 + 540) % 360 - 180) < 0.05;
-    if (running && visible && motion.matches && !settled && !frame) frame = requestAnimationFrame(tick);
-    if (settled || !visible || !motion.matches) last = 0;
-  }
+  function settled() { return mode === "live" && target !== null && Math.abs(((target - angle) % 360 + 540) % 360 - 180) < 0.05; }
 
-  function start() {
-    if (!motion.matches) return;
-    takeOver();
-    running = true;
-    schedule();
+  function schedule() {
+    if (visible && motion.matches && !settled() && !frame) frame = requestAnimationFrame(tick);
+    if (settled() || !visible || !motion.matches) last = 0;
   }
 
   function lock(name) {
     if (!motion.matches) return;
-    takeOver();
-    running = true;
+    mode = "live";
     target = BEARING[name];
     schedule();
   }
 
   function release() {
     target = null;
-    if (started) { running = true; schedule(); }
+    if (mode === "live") schedule();
   }
 
   ["c1", "c2"].forEach(function (name) {
@@ -97,12 +109,6 @@
     if (!scope.contains(document.activeElement)) release();
   });
 
-  // Hand over after the opening sweep has come to rest on FLASHPOINT.
-  sweep.addEventListener("animationend", function (e) {
-    if (e.animationName !== "sweep" || started) return;
-    restTimer = setTimeout(function () { if (target === null) start(); }, REST_MS);
-  });
-
   // Don't spend frames on a scope nobody can see.
   if ("IntersectionObserver" in window) {
     new IntersectionObserver(function (entries) {
@@ -111,13 +117,15 @@
     }).observe(scope);
   }
 
-  // Reduced motion switched on mid-visit: stop where the kit rests.
+  // Reduced motion: still at 042°, switched on or off mid-visit.
   if (motion.addEventListener) {
     motion.addEventListener("change", function () {
-      if (motion.matches) { if (started) { running = true; schedule(); } return; }
+      if (motion.matches) { mode = "live"; schedule(); return; }
       if (frame) { cancelAnimationFrame(frame); frame = 0; }
-      running = false; target = null; angle = 42; speed = 0;
-      sweep.style.transform = ""; sweep.style.animation = "";
+      target = null; angle = REST; speed = 0; draw();
     });
   }
+
+  draw();
+  if (motion.matches) schedule();
 })();
