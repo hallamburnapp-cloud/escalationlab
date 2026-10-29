@@ -770,7 +770,7 @@
     groupTopBar(me);
     var stage = shape.stage(me);
     var sid = shape.session(me).id;
-    if (stage === "setup") return renderGroupWaiting(me);
+    if (stage === "setup") return updateScreen(renderGroupWaiting(me), me);
     if (stage === "briefing") return renderGroupBriefing(me);
     if (stage === "turn1" || stage === "turn2") {
       var turn = turnOfStage(stage);
@@ -785,7 +785,7 @@
     if (stage === "survey") return renderSurveyStage(me);
     if (stage === "debrief") return updateScreen(renderDebrief(me), me);
     if (stage === "closed") return renderClosed();
-    return renderGroupWaiting(me);
+    return updateScreen(renderGroupWaiting(me), me);
   }
 
   // The closed screen: reached when the server reports stage "closed", and from unauthorised()
@@ -806,6 +806,16 @@
     });
   }
 
+  // The sealed cover every lobby screen shares: the TIN PROPHET mark, a file line and decorative redaction bars.
+  function sealedCover(fileLine, title, sub) {
+    var bars = el("div", { class: "redaction", "aria-hidden": "true" }, [el("span"), el("span"), el("span")]);
+    return el("header", { class: "cover" }, [
+      el("img", { class: "cover-mark", src: "/brand/svg/mark-sealed-lab.svg", alt: "", width: "96", height: "96" }),
+      el("div", { class: "cover-text" }, [el("p", { class: "kicker cover-file" }, fileLine), el("h1", null, title), sub ? el("p", { class: "cover-sub" }, sub) : null]),
+      bars
+    ]);
+  }
+
   function renderGroupWaiting(me) {
     var ctx = show("group:waiting:" + shape.session(me).id, function (root) {
       var consentNote = el("p", { class: "faint" });
@@ -814,13 +824,16 @@
           store.set("consent." + shape.session(me).id, "1");
           consentNote.textContent = "Group consent recorded.";
           consentButton.setDisabled(true);
+          if (ctx && ctx.update) ctx.update(me);
         }, function (err) { consentNote.textContent = "Could not record consent: " + err.message; });
       });
       if (store.get("consent." + shape.session(me).id) || shape.consent(me)) { consentButton.setDisabled(true); consentNote.textContent = "Group consent recorded."; }
-      root.appendChild(el("div", { class: "screen" }, [
-        el("p", { class: "kicker" }, shape.scenario(me).title || "TIN PROPHET"),
-        el("h1", null, shape.sideName(me)),
-        el("div", { class: "waiting" }, [el("strong", null, "Waiting for the facilitator."), el("span", null, "The briefing will appear here when the session starts.")]),
+      var facts = el("dl", { class: "facts" });
+      var scenario = shape.scenario(me);
+      root.appendChild(el("div", { class: "screen lobby" }, [
+        sealedCover("TIN PROPHET · Sealed research lab · Session file", shape.sideName(me), scenario.title || null),
+        el("p", { class: "standby", role: "status" }, [el("span", { class: "standby-dot", "aria-hidden": "true" }), el("span", null, [el("strong", null, "Standing by."), " Waiting for the facilitator. The briefing will appear here when the session starts."])]),
+        facts,
         el("div", { class: "card is-quiet" }, [
           el("h2", null, "Before you start"),
           el("p", { class: "muted" }, "Each person at the table joins on their own phone using this table's code and a table number (P1 to P12). The group terminal records one consent for the table."),
@@ -828,6 +841,19 @@
           consentNote
         ])
       ]));
+      function update(next) {
+        var t = shape.timer(next);
+        var people = next.participants || {};
+        var consented = !!(store.get("consent." + shape.session(next).id) || shape.consent(next));
+        UI.clear(facts);
+        [["Your side", shape.sideName(next)],
+         ["Turn length", t && t.turnMinutes ? t.turnMinutes + " minutes" : "Set by the facilitator"],
+         ["Table consent", consented ? "Recorded" : "Not yet recorded"],
+         ["Phones joined", String(people.consented || 0) + (people.baseline ? " (" + people.baseline + " ready)" : "")]
+        ].forEach(function (row) { facts.appendChild(el("div", null, [el("dt", null, row[0]), el("dd", null, row[1])])); });
+      }
+      update(me);
+      return { update: update };
     });
     return ctx;
   }
@@ -2137,7 +2163,16 @@
   function renderConsoleList() {
     var ctx = show("console:list", function (root) {
       var table = el("div", { class: "card" });
-      root.appendChild(el("div", { class: "screen" }, [el("p", { class: "kicker" }, "Facilitator console"), el("h1", null, "Sessions"), consoleNav(), table]));
+      var server = el("span", null, "Checking the lab server…");
+      var steps = el("ol", { class: "steps" }, ["Create a session", "Give each table its code", "Run the stages from here", "Export, then close"].map(function (t) { return el("li", null, t); }));
+      root.appendChild(el("div", { class: "screen" }, [
+        el("div", { class: "console-cover" }, [
+          el("img", { class: "cover-mark", src: "/brand/svg/mark-sealed-lab.svg", alt: "", width: "72", height: "72" }),
+          el("div", null, [el("p", { class: "kicker" }, "TIN PROPHET · Facilitator console"), el("h1", null, "Sessions"), el("p", { class: "cover-sub" }, server)]),
+          steps
+        ]),
+        consoleNav(), table]));
+      api("GET", "/api/health").then(function (h) { server.textContent = "Lab server online · version " + ((h && h.version) || "unknown"); }, function () { server.textContent = "The lab server is not answering."; });
       return { table: table };
     });
     // GET /api/sessions: [{ id, label, scenario: { id, title, shortTitle }, condition, mode, stage, status, createdAt }].
@@ -2145,7 +2180,10 @@
       return api("GET", "/api/sessions", undefined, { signal: signal }).then(function (sessions) {
         sessions = sessions || [];
         UI.clear(ctx.table);
-        if (!sessions.length) { ctx.table.appendChild(el("p", { class: "muted" }, "No sessions yet. Create one from New session.")); return; }
+        if (!sessions.length) {
+          ctx.table.appendChild(el("div", { class: "empty" }, [el("p", null, "No sessions yet."), el("p", { class: "muted" }, "A session holds the codes for each table, the stage controls and the exports."), el("div", { class: "actions" }, [el("a", { class: "btn btn-primary", href: "#console/new" }, "Create the first session")])]));
+          return;
+        }
         var rows = sessions.map(function (s) {
           var link = el("a", { href: "#console/session/" + encodeURIComponent(s.id) }, s.label || s.id);
           var scenario = (s.scenario && (s.scenario.shortTitle || s.scenario.title)) || "";

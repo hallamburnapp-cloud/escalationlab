@@ -24,4 +24,4 @@ This repository is the public website, served by GitHub Pages from its main bran
 
 The lab's server, scenarios and research documents are not published here; the server runs at `lab-api.escalationlab.org` from a separate private repository.
 
-An Escalation Lab project by Hallam Burnapp (PhD researcher, University of Aberdeen). © 2026 Hallam Burnapp. All rights reserved — see `LICENSE.md`.
+An independent project by Hallam Burnapp. © 2026 Hallam Burnapp. All rights reserved — see `LICENSE.md`.
